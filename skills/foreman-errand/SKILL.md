@@ -1,9 +1,9 @@
 ---
-name: ollama-delegate
+name: foreman-errand
 description: This skill should be used when the user asks to "delegate to ollama", "use the local model", "offload this to save credits", "summarize this locally", or before performing token-heavy, low-reasoning-density work such as summarizing large files or logs, generating boilerplate/docstrings, or drafting a first-pass commit message — situations where spending Claude usage is wasteful because a local model on the user's own GPU can do it well enough.
 ---
 
-# Ollama Delegate
+# Foreman Errand
 
 Offload token-heavy, low-reasoning-density subtasks to a local Ollama model
 running on the user's GPU, instead of spending Claude usage on them. Claude
@@ -36,7 +36,7 @@ output format wanted).
 2. Call the helper script:
 
 ```bash
-python "$HOME/.claude/skills/ollama-delegate/scripts/ask_ollama.py" \
+python "$HOME/.claude/skills/foreman-errand/scripts/ask_ollama.py" \
   --model gpt-oss:20b --effort low --file /path/to/prompt.txt
 ```
 

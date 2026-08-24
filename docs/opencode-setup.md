@@ -125,9 +125,17 @@ actually fails.
 **`qwen3:8b` is the current default.** 5.2GB download, ~8GB VRAM, no CPU
 offload. Found via BFCL (Berkeley Function Calling Leaderboard) multi-turn
 tool-calling data, where it scored *higher* than 14B and 30B models from the
-same family, non-monotonic with size. Empirically confirmed 3/3 through
-OpenCode, 28-39 seconds per task, the fastest and most reliable model found
-in this project's testing.
+same family, non-monotonic with size. Confirmed 3/3 on trivial single-file
+read-and-edit tasks through OpenCode, 28-39 seconds per task, the fastest
+and most reliable model found in this project's testing at that task size.
+
+On a moderately harder task (edit an existing file to add a function, write
+a real test suite, add input validation), it failed differently and worse:
+it abandoned the actual file edit after three failed attempts, then wrote a
+test file for an invented class that doesn't exist anywhere, with a syntax
+error, and reported no problem. Treat "3/3" as validated for simple tasks
+specifically, not as a general reliability guarantee. Always independently
+verify regardless of how the task went.
 
 **`gpt-oss:20b`.** 13GB, fits fully in 16GB VRAM, reliable, ~110s/task.
 Solid fallback if `qwen3:8b` doesn't suit a specific task.
