@@ -1,4 +1,4 @@
-# local-head
+# foreman
 
 Claude Code skills that hand coding and research work to local Ollama models, so your GPU does the token-heavy part instead of your Claude usage.
 
@@ -10,7 +10,7 @@ Everything here was tested on a real machine (RTX 5070 Ti, 16GB VRAM, Windows 11
 
 Three Claude Code skills, meant to be copied into `~/.claude/skills/`:
 
-- **[`local-head-recommend`](skills/local-head-recommend/)** — shortlists which local model to actually use, given this machine's hardware. Ranks candidates by real tool-calling benchmark data (BFCL) and VRAM fit instead of guessing from marketing claims, then the shortlist gets verified empirically before anything is trusted. Run this first on a new machine.
+- **[`foreman-recommend`](skills/foreman-recommend/)** — shortlists which local model to actually use, given this machine's hardware. Ranks candidates by real tool-calling benchmark data (BFCL) and VRAM fit instead of guessing from marketing claims, then the shortlist gets verified empirically before anything is trusted. Run this first on a new machine.
 - **[`ollama-delegate`](skills/ollama-delegate/)** — a single stateless call to a local model for token-heavy, low-reasoning work: summarizing a large log before reading it, drafting boilerplate, a first-pass commit message. No memory, no tools, just a self-contained prompt in and an answer out.
 - **[`ollama-agent-head`](skills/ollama-agent-head/)** — an autonomous tool-calling loop that runs as a separate background process. Claude launches it, the local model reads/edits files and runs shell commands for a bounded number of turns, then it checkpoints (writes a status report and a git diff) and exits. Claude reviews the checkpoint and decides whether to resume, correct, or stop. Claude's usage is spent at checkpoints, not per step — a task 10x bigger costs the local loop almost nothing extra, since Claude's own part of the work doesn't scale with it.
 
@@ -20,7 +20,7 @@ There's also a documented [alternative using OpenCode](docs/opencode-alternative
 
 1. Install [Ollama](https://ollama.com).
 2. Copy all three `skills/*/` folders into `~/.claude/skills/`. They're plain Python (stdlib only, no dependencies) and pure text — no build step.
-3. Ask Claude to run `local-head-recommend` (or run `python skills/local-head-recommend/scripts/recommend_model.py` yourself) to get a model shortlisted and verified for your actual hardware, rather than assuming this repo's defaults (`gpt-oss:20b`, `qwen3-coder:30b`) are right for your GPU — see [Model notes](#model-notes) for what's been validated so far and why bigger isn't always better.
+3. Ask Claude to run `foreman-recommend` (or run `python skills/foreman-recommend/scripts/recommend_model.py` yourself) to get a model shortlisted and verified for your actual hardware, rather than assuming this repo's defaults (`gpt-oss:20b`, `qwen3-coder:30b`) are right for your GPU — see [Model notes](#model-notes) for what's been validated so far and why bigger isn't always better.
 4. (Optional) For `ollama-agent-head`'s `web_search` tool: sign up free at [Tavily](https://tavily.com) (no card required) and set `TAVILY_API_KEY`, or drop the key in `~/.claude/tavily_api_key.txt`. Without it, `web_search` fails with a clear error and the agent falls back to `web_fetch` on URLs it already knows.
 
 That's it — Claude Code picks up skills from `~/.claude/skills/` automatically in every project.
@@ -42,7 +42,7 @@ model found later — `qwen3:8b` — turned out faster and just as reliable as e
   reliably better at tool use specifically. Empirically confirmed 3/3 clean
   through OpenCode, 28-39 seconds per task — meaningfully faster than
   everything else in this table. Current best default; see
-  `local-head-recommend` for how this was found.
+  `foreman-recommend` for how this was found.
 - `gpt-oss:20b` — 13GB, fits fully in 16GB VRAM, native tool-calling, big context window. Reliable, ~110s/task through OpenCode.
 - `qwen3-coder:30b` — 18GB, a mixture-of-experts model (~3.3B active params per token), so it runs acceptably even spilling into system RAM on a 16GB card. Reliable and efficient in this repo's own lean `ollama-agent-head` harness, but OpenCode's heavier system prompt combined with the CPU-offload penalty makes it slow there — times out on Ollama, ~190s via llama.cpp with `--fit` tuning. Use for `ollama-agent-head`, not OpenCode, unless tuned per `docs/opencode-alternative.md`.
 

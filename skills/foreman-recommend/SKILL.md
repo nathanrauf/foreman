@@ -1,9 +1,9 @@
 ---
-name: local-head-recommend
+name: foreman-recommend
 description: This skill should be used when the user asks "what model should I use for local Ollama/OpenCode work", "recommend a local model", "which model fits my GPU", or when setting up ollama-agent-head/OpenCode for the first time on a machine and no validated model is known yet — it shortlists candidates by hardware fit and real tool-calling benchmark data instead of guessing from marketing claims or blog posts.
 ---
 
-# Local Head: Model Recommendation
+# Foreman: Model Recommendation
 
 Don't make the user manually try a bunch of local models to find one that
 works — that's real time and real friction, and it's exactly the kind of
@@ -24,7 +24,7 @@ from a model's name or parameter count alone.
 ## Stage 1: shortlist (automated, this script)
 
 ```bash
-python "$HOME/.claude/skills/local-head-recommend/scripts/recommend_model.py"
+python "$HOME/.claude/skills/foreman-recommend/scripts/recommend_model.py"
 ```
 
 Ranks candidates from a curated list (`CANDIDATES` in the script) by:
