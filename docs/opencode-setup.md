@@ -224,8 +224,51 @@ with a much lighter system prompt, where the offload penalty doesn't
 compound against nearly as much prefill overhead. This is a harness-weight
 problem, not a verdict on the model.
 
+**`devstral:24b`: previously rejected here, wrongly.** 14.3GB, dense 23.6B,
+Mistral's agentic coding model. It was dropped early for never invoking
+structured tool-calling and narrating calls as JSON text instead. Retested
+2026-08-24 with an `AGENTS.md` present: clean tool calls, 38s on a
+read-and-edit task. The original test predated the `AGENTS.md` fix above,
+and the rejection was never revisited. Only trivial-task validated so far.
+
+Worth taking as a general warning: a rejection is only as good as the
+harness configuration it was measured under. When the harness changes, go
+back and recheck what it disqualified.
+
+## Does the runtime cause tool-calling failures?
+
+Sometimes, and not in the direction the common advice suggests. There's
+real evidence here for "Ollama's chat templates break tool-calling":
+`qwen3-coder:30b` times out entirely through Ollama and works through
+llama.cpp. But tested directly, with the same model, same Q4_K_M quant
+(the GGUF blob Ollama itself downloaded), same task, same `AGENTS.md`, and
+a verified-clean GPU:
+
+| `devstral:24b` | Ollama | llama.cpp |
+|---|---|---|
+| Real tool calls | 2 | 0 |
+| File actually modified | yes | no |
+| Time | 38s | 239s |
+
+llama.cpp produced exactly the narration failure the advice blames on
+Ollama: XML pseudo-markup instead of a tool call, file untouched. Devstral
+uses Mistral's tool-call format and Ollama ships a curated template for it,
+while llama.cpp fell back to the template embedded in the GGUF.
+
+So the runtime genuinely matters, per model, in both directions. Neither is
+categorically better. If a capable model narrates tool calls instead of
+making them, try the other runtime before concluding anything about the
+model, and check `AGENTS.md` is present first, since that fixes the same
+symptom more cheaply.
+
+One practical note: llama.cpp can load the GGUF blob Ollama already pulled,
+so testing both ways costs no extra download. Find it via the manifest in
+`$OLLAMA_MODELS/manifests/registry.ollama.ai/library/<model>/<tag>`.
+
 **Rejected: the Qwen2.5 generation**, for tool-calling through this stack
-specifically:
+specifically (and see the warning above: these were measured under the same
+old configuration that wrongly condemned devstral, so they deserve a
+recheck before being treated as settled):
 
 - `qwen2.5-coder:14b`: 0/2 on tool-calling, confirmed via its own Hugging
   Face model card, which doesn't mention tool/function calling at all. (A

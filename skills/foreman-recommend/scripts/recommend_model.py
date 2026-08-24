@@ -166,6 +166,13 @@ KNOWN_CANDIDATES = {
         "validated_at": "moderate", "documented_failure": False,
         "notes": "DENSE 27.8B (all parameters active per token), so it is computationally the largest model here despite the smaller headline number than the 35B-A3B MoE. Validated 2026-08-24 on the 8-function module task: all three deliverables correct, 26 tests passing, a complete README, and it verified its own work by running `python -m pytest` correctly where gpt-oss:20b ran bare `pytest`, hit the Windows PATH gotcha, and reported success anyway. Needs ~25% CPU offload on a 16GB card; 666s on that task. Available via plain `ollama pull`, no manual server.",
     },
+    "devstral:24b": {
+        "approx_vram_gb": 14, "bfcl_path": None, "backend": "ollama",
+        "active_params_b": 23.6,
+        "measured_seconds_per_task": 38,
+        "validated_at": "trivial", "documented_failure": False,
+        "notes": "Dense 23.6B, Mistral's agentic coding model. PREVIOUSLY REJECTED HERE IN ERROR: it was recorded as never invoking structured tool-calling, narrating calls as JSON text instead. Retested 2026-08-24 with an AGENTS.md present and it tool-called cleanly, 38s on a read-and-edit task. The original test almost certainly predated the AGENTS.md fix, and the rejection was never revisited. Also the control in a runtime A/B: identical GGUF and quant scored 2/2 tool calls via Ollama (38s) and 0/2 via llama.cpp (239s, narrated XML pseudo-markup, file untouched), so for this model Ollama's curated chat template is the one that works. Only trivial-task validated so far.",
+    },
     "qwen2.5-coder:14b": {
         "approx_vram_gb": 9, "active_params_b": 14.0, "bfcl_path": None, "backend": "ollama",
         "validated_at": None, "documented_failure": True,
