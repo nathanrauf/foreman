@@ -33,9 +33,13 @@ Where this gets thin, honestly: for something small and well-specified (summariz
 
 Three Claude Code skills, meant to be copied into `~/.claude/skills/`:
 
-- **[`foreman-recommend`](skills/foreman-recommend/)**: shortlists which local model to use, given your hardware. Ranks known-good candidates by real tool-calling benchmark data (BFCL) and measured speed, and separately searches Hugging Face live so it isn't stuck recommending whatever was known when this was written (it found a model uploaded the day before one test run). Nothing gets recommended without empirical verification first; see the skill's own doc for why that step isn't optional.
+- **[`foreman-recommend`](skills/foreman-recommend/)**: shortlists which local model to use, given your hardware. Ranks candidates by **how far each has actually been verified**, then by measured speed, then by tool-calling benchmark data (BFCL). That order is deliberate and is a correction: ranking on speed alone once put a model on top that was both the fastest tested and the only one with a documented silent failure. It also searches Ollama's library and Hugging Face live, so it isn't stuck recommending whatever was known when this was written, and it tracks *active* parameters rather than total, because a Mixture-of-Experts model at 35B beat the dense 27B of its own family by 3x on speed. Nothing gets recommended without empirical verification first; see the skill's own doc for why that step isn't optional.
 - **[`foreman-errand`](skills/foreman-errand/)**: a single stateless call to a local model for token-heavy, low-reasoning work, like summarizing a large log before reading it, drafting boilerplate, or a first-pass commit message. No agent loop, no dependencies beyond Python's standard library. For tasks that don't need tool use at all, this is lighter than spinning up a full coding agent.
 - **[`foreman-build`](skills/foreman-build/)**: runs a real multi-step task through [OpenCode](https://opencode.ai) against a local model, with Claude launching and reviewing rather than driving every turn itself. Not wrapped in more custom tooling beyond that, since OpenCode is already good at this and maintaining a parallel implementation isn't worth it. Points to `docs/opencode-setup.md` for the full setup and the two Ollama settings that prevent a real crash this project hit.
+
+Plus one benchmark:
+
+- **[`benchmarks/pricing-bugfix`](benchmarks/pricing-bugfix/)**: the shared task every model in the known list is timed and scored on, with the grader that scores it. A bug in existing code rather than a blank file, where the fix has to be minimal, regression tests added, existing tests kept, and a changelog updated. Fifteen objective checks, run against the files rather than against what the model claimed. Having *one fixed* task matters more than the task being clever: the same model measured 666s on a greenfield task and 242s on this one, so timings from different tasks say nothing when compared.
 
 ## Setup
 
@@ -45,6 +49,8 @@ Three Claude Code skills, meant to be copied into `~/.claude/skills/`:
 4. Follow [`docs/opencode-setup.md`](docs/opencode-setup.md) to install OpenCode and set the two Ollama settings. These are genuinely required, not optional; see the crash note below.
 5. `foreman-errand` and `foreman-recommend` need no further setup beyond that; both are pure Python.
 
+On the machine above (16GB VRAM), the current answer is `qwen3.6:35b-a3b`, with `gpt-oss:20b` as the fast small model. Treat that as a worked example rather than a default to copy: it's what the process arrived at on one specific GPU, and step 3 exists because the answer moves with your hardware and with the month. If you want to check a candidate yourself rather than take anyone's word for it, [`benchmarks/pricing-bugfix`](benchmarks/pricing-bugfix/) is the task and grader used to produce those numbers.
+
 Claude Code picks up skills from `~/.claude/skills/` automatically in every project.
 
 ## What broke, and what didn't
@@ -52,7 +58,7 @@ Claude Code picks up skills from `~/.claude/skills/` automatically in every proj
 Built to run unattended, so it earns trust by being tested unattended. Real findings from stress-testing this on the machine above, not a curated highlight reel, the actual list:
 
 **Fixed:**
-- **A rejection that turned out to be our own fault.** `devstral:24b` was dropped early on for never invoking structured tool-calling, narrating calls as JSON text instead. Retested later with an `AGENTS.md` in place and it tool-called cleanly in 38 seconds. The original test predated that fix, and nobody went back to recheck. A rejected model is a claim with a shelf life; when the harness changes, the rejections it produced expire with it.
+- **A rejection that turned out to be our own fault, and a promotion that turned out to be wrong too.** `devstral:24b` was dropped early on for never invoking structured tool-calling, narrating calls as JSON text instead. Retested later with an `AGENTS.md` in place and it tool-called cleanly in 38 seconds: the original test predated that fix, and nobody went back to recheck. So it was promoted. Then it met its first realistic task and did nothing at all, zero tool calls, every file untouched, exit code 0. Both judgements were wrong in opposite directions. A rejection is a claim with a shelf life, and when the harness changes the rejections it produced expire with it; but a trivial-task pass is not a promotion either.
 - Bare `bash` resolves to Windows' broken WSL launcher stub regardless of `PATH` order. Windows checks `System32` before consulting `PATH` at all for a bare command name. Fixed by resolving Git Bash's full path explicitly.
 - Bare `python`/`pip` can resolve to a Windows Store stub or a stale, mismatched install in a freshly spawned subprocess, even when the interactive shell resolves correctly (shells cache their own resolution). One case: `pip install` failed completely silently, and the model fabricated a plausible-sounding wrong explanation for the failure and reported the task complete anyway, caught only by independently verifying, not by trusting the model's summary.
 - Keyless web search (DuckDuckGo, a public SearXNG instance) is dead. Both return bot-challenge pages now, not results. Switched to the Tavily API (verified genuine free tier, no card).
