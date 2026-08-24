@@ -93,6 +93,8 @@ On the machine above (16GB VRAM), the current answer is `qwen3.6:35b-a3b`, with 
 
 Claude Code picks up skills from `~/.claude/skills/` automatically in every project.
 
+**Using a different machine's GPU?** [`docs/remote-access.md`](docs/remote-access.md) covers serving Ollama to your LAN so a laptop can use a desktop's card. Read the security section first: Ollama has no authentication at all, so the firewall rule is the entire boundary, and recent versions bind `0.0.0.0` by default rather than localhost.
+
 ## What broke, and what didn't
 
 Built to run unattended, so it earns trust by being tested unattended. Real findings from stress-testing this on the machine above, not a curated highlight reel, the actual list:

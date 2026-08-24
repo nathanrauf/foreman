@@ -31,6 +31,7 @@ Usage:
 """
 import argparse
 import json
+import os
 import re
 import subprocess
 import sys
@@ -197,11 +198,33 @@ KNOWN_CANDIDATES = {
 
 
 def get_vram_gb():
+    """Total VRAM of the GPU on THIS machine, in GB.
+
+    This is local detection. When Ollama is served from another machine over
+    the network, it reads the wrong hardware and sizes recommendations to
+    whatever GPU the client happens to have, usually far too small. Pass
+    --vram-gb with the serving machine's VRAM, or run this on the serving
+    machine where detection is correct. See docs/remote-access.md.
+    """
     out = subprocess.run(
         ["nvidia-smi", "--query-gpu=memory.total", "--format=csv,noheader,nounits"],
         capture_output=True, text=True,
     )
     return int(out.stdout.strip().split("\n")[0]) / 1024
+
+
+def ollama_host_is_remote():
+    """True when OLLAMA_HOST points somewhere other than this machine.
+
+    Guards the most confusing way to misuse this script: running it on a
+    laptop pointed at a desktop's GPU and silently shortlisting for the
+    laptop's card.
+    """
+    host = os.environ.get("OLLAMA_HOST", "")
+    if not host:
+        return False
+    hostname = host.split("//")[-1].split(":")[0]
+    return hostname not in ("", "localhost", "127.0.0.1", "0.0.0.0", "::1")
 
 
 def fetch_bfcl_score(bfcl_path):
@@ -439,7 +462,13 @@ def main():
         )
     known.sort(key=sort_key)
 
-    print(f"Detected VRAM: {vram:.1f}GB  (budget after {args.headroom_gb:.1f}GB headroom: {budget:.1f}GB)\n")
+    source = "detected locally" if not args.vram_gb else "specified with --vram-gb"
+    print(f"VRAM: {vram:.1f}GB {source}  (budget after {args.headroom_gb:.1f}GB headroom: {budget:.1f}GB)\n")
+    if not args.vram_gb and ollama_host_is_remote():
+        print(f"WARNING: OLLAMA_HOST points at {os.environ['OLLAMA_HOST']}, but the VRAM above")
+        print("was read from THIS machine's GPU. If inference runs elsewhere this is the wrong")
+        print("hardware: pass --vram-gb with the serving machine's VRAM, or run this on that")
+        print("machine instead. See docs/remote-access.md.\n")
     print("=== KNOWN (hand-curated, BFCL-scored and/or empirically tested) ===\n")
     validation_label = {
         "moderate": "verified on a real multi-function task",
