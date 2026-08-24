@@ -1,6 +1,6 @@
 ---
 name: foreman-runner
-description: Runs an already-decided delegation to a local model and reports a verdict. Use this when a task has been judged worth delegating and needs to be executed: it writes the task file, launches OpenCode against the local model, runs the verification command, and reports pass or fail with what actually changed. Do not use it to decide whether delegating is worthwhile, and do not use it for work that needs judgement about the approach.
+description: Runs an already-decided delegation to a local model and reports a verdict. Use this when a task has been judged worth delegating and needs to be executed, so it writes the task file, launches OpenCode against the local model, runs the verification command, and reports pass or fail with what actually changed. Do not use it to decide whether delegating is worthwhile, and do not use it for work that needs judgement about the approach.
 model: haiku
 maxTurns: 25
 tools: [Bash, Read, Write, Grep, Glob]

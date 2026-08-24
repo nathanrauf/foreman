@@ -1,6 +1,6 @@
 ---
 name: foreman-build
-description: This skill should be used when the user explicitly wants a multi-step coding task run on a local model rather than by Claude, such as "do this with the local model", "run this on OpenCode", "keep this off the cloud", or when Claude usage limits, privacy, or a long unattended run are the reason for moving work off Claude. Do NOT reach for this to save credits: measured on this project it costs slightly MORE Claude tokens than doing the task directly, because Claude token cost is dominated by context and orchestration rather than generation. Not for single quick calls (use foreman-errand) or for choosing a model (use foreman-recommend).
+description: This skill should be used when the user explicitly wants a multi-step coding task run on a local model rather than by Claude, such as "do this with the local model", "run this on OpenCode", "keep this off the cloud", or when Claude usage limits, privacy, or a long unattended run are the reason for moving work off Claude. Do NOT reach for this to save credits, since measured on this project it costs slightly MORE Claude tokens than doing the task directly, Claude token cost being dominated by context and orchestration rather than generation. Not for single quick calls (use foreman-errand) or for choosing a model (use foreman-recommend).
 ---
 
 # Foreman Build
