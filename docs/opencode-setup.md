@@ -164,33 +164,46 @@ silently produces broken output costs more than a slow one that works,
 because catching it burns a review cycle and every failure this project hit
 was silent. `foreman-recommend` sorts on the same principle.
 
-**`Qwen3.6-35B-A3B` is the quality pick.** 22GB GGUF, ~15GB VRAM with
-`--fit on`, run through llama.cpp rather than Ollama (it isn't in Ollama's
-library). It's the only model here validated at moderate complexity on two
-separate tasks: it passed one where a faster model failed outright (even
-excluding `bool` from an `isinstance(x, int)` check to dodge a subtle
-Python gotcha), and on an 8-function module task it delivered all three
-requirements correctly, 28 tests passing plus a README that actually
-documented every function, where `gpt-oss:20b` silently shorted the docs.
+All four numbers below come from the same benchmark, run the same way: a
+realistic bug-fix task (find an unreachable branch in existing code, fix it
+minimally, add regression tests, preserve the existing ones, update a
+changelog), through Ollama, context 32768, `OLLAMA_NUM_PARALLEL=1`, KV
+cache `q8_0`, one model resident at a time, graded by 15 objective checks
+run independently of what the model claimed. Timings from different tasks
+are not comparable and are not mixed here.
 
-Its speed is task-dependent in a way the trivial-task number hides: 43-55s
-on trivial tasks, but **412s on that module task**. It's a 22GB model on a
-16GB card, so ~7GB lives on the CPU, and the offload penalty compounds as
-context grows (measured 32 tokens/s decaying to ~4 tokens/s inside a single
-run). Setup is heavier too: see the llama.cpp section below, and note
-`--mlock` holds ~19GB of RAM until the server is stopped manually.
+| | score | time | VRAM |
+|---|---|---|---|
+| `qwen3.6:35b-a3b` | **15/15** | **77s** | 23GB, offload |
+| `qwen3.6:27b` | 15/15 | 242s | 18GB, offload |
+| `gpt-oss:20b` | 14/15 | 36s | 13GB, fits |
+| `devstral:24b` | 8/15 | 26s | 14GB, offload |
 
-**`gpt-oss:20b` is the default, and the right one for routine work.** 13GB,
-fits *entirely* in 16GB VRAM with no CPU offload, plain `ollama pull`, no
-manual server to start or remember to stop. ~110s/task, and unlike the
-above it doesn't degrade as context grows.
+**`qwen3.6:35b-a3b` is the default and the best model tested.** `ollama
+pull qwen3.6:35b-a3b`, 23.9GB. It is MoE: 35B total but only ~3B active per
+token, which is why it beats the *dense* 27B of its own family by roughly
+3x on speed while carrying *more* CPU offload (41%/59% against 25%/75%).
+Perfect score, minimal fix, every original test preserved, three new
+regression tests, changelog updated.
 
-It's the configured default in `opencode.json` deliberately. A default is
-what runs when nothing is specified, including when a flag gets swallowed
-(see the Windows note above), so it should have zero preconditions.
-`Qwen3.6` needs a hand-started server holding 19GB of RAM; if it isn't
-running, every default invocation fails. Reach for `Qwen3.6` explicitly
-(`-m llamacpp/qwen3.6-35b`) when completeness matters more than turnaround.
+Read that comparison carefully, because it inverts the obvious assumption:
+the "smaller" 27B is computationally the larger model and the slower one.
+Prefer MoE when VRAM is tight.
+
+An earlier version of this file said this model was llama.cpp-only. That
+was stale and would have sent you to build a server for nothing. The
+unsloth GGUF still works that way if you want manual CPU/GPU control, but
+`--mlock` there pins ~19GB of RAM until you stop the server by hand, while
+Ollama auto-unloads on idle.
+
+**`gpt-oss:20b` is the small/fast model**, and the only one that fits
+*entirely* in 16GB VRAM with no offload at all. 36s, more than twice as
+fast as anything else, and it gets the central change right consistently.
+Its weakness is the requirements *around* the code: it shorted a README on
+one task, and on this one it fixed the bug correctly, added good tests, and
+then **deleted an existing passing test** the task explicitly said to keep,
+leaving a green suite that hides the loss. Good for quick mechanical work;
+check its secondary deliverables every time.
 
 Tested on a task past trivial (an 8-function module with JSON persistence,
 validation, a real test suite, and a README), 2026-08-23: got the actual
@@ -224,16 +237,23 @@ with a much lighter system prompt, where the offload penalty doesn't
 compound against nearly as much prefill overhead. This is a harness-weight
 problem, not a verdict on the model.
 
-**`devstral:24b`: previously rejected here, wrongly.** 14.3GB, dense 23.6B,
-Mistral's agentic coding model. It was dropped early for never invoking
-structured tool-calling and narrating calls as JSON text instead. Retested
-2026-08-24 with an `AGENTS.md` present: clean tool calls, 38s on a
-read-and-edit task. The original test predated the `AGENTS.md` fix above,
-and the rejection was never revisited. Only trivial-task validated so far.
+**`devstral:24b`: the case for not trusting trivial-task results.** 14.3GB,
+dense 23.6B, Mistral's agentic coding model. It was rejected here early for
+narrating tool calls instead of making them, then found to be a harness
+artifact: retested with an `AGENTS.md` present it tool-called cleanly in
+38s. So it was promoted back.
 
-Worth taking as a general warning: a rejection is only as good as the
-harness configuration it was measured under. When the harness changes, go
-back and recheck what it disqualified.
+Then it met its first realistic task and **did nothing at all**. One line
+of output, "Let me help you with that. I'll look at pricing.py to find the
+bug first," zero tool calls, every file byte-identical afterward, exit code
+0. It scored 8/15, which is exactly what the untouched starting state
+scores.
+
+Two lessons, both expensive to learn twice. A rejection is only as good as
+the harness configuration it was measured under, so recheck disqualified
+models when the harness changes. And a trivial-task pass predicts nothing
+about real work: this model went from a clean 2/2 read-and-edit to
+producing literally zero output on a task one step harder.
 
 ## Does the runtime cause tool-calling failures?
 

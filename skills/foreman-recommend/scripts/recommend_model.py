@@ -117,6 +117,15 @@ def parse_active_params_b(name):
     m = MOE_ACTIVE_PARAMS_RE.search(name)
     return float(m.group(1)) if m else None
 
+# measured_seconds_per_task is only comparable when every entry is timed on
+# the SAME task under the same conditions. The current numbers are all from
+# one realistic bug-fix task (find an unreachable branch in existing code,
+# fix it minimally, add regression tests, preserve existing tests, update a
+# changelog), Ollama, context 32768, OLLAMA_NUM_PARALLEL=1, KV cache q8_0,
+# one model resident at a time. Re-time the whole set when changing the task
+# rather than mixing numbers from different ones; the same model measured
+# 666s on a greenfield task and 242s here.
+#
 # tag -> approx VRAM at Q4-class quantization (GB), BFCL result-dir name (or
 # None if not covered), acquisition backend, how far it's actually been
 # validated, whether it has a documented hard failure, and notes carrying
@@ -149,29 +158,30 @@ KNOWN_CANDIDATES = {
     },
     "gpt-oss:20b": {
         "approx_vram_gb": 13, "active_params_b": 3.6, "bfcl_path": None, "backend": "ollama",
-        "measured_seconds_per_task": 110,
+        "measured_seconds_per_task": 36,
         "validated_at": "moderate-partial", "documented_failure": False,
-        "notes": "Not in BFCL's coverage. 3/3 on trivial tasks through OpenCode (with AGENTS.md fix), fits fully in 16GB VRAM. On a real 8-function module task it got the code and tests right (19 tests, all passing, independently verified) but silently shorted the README requirement, asserting documentation existed rather than writing it, and reported completion anyway. Reliable for code, verify secondary deliverables.",
+        "notes": "Not in BFCL's coverage. MoE ~3.6B active, the only model here that fits ENTIRELY in 16GB VRAM with no CPU offload, and by far the fastest (36s on the realistic bug-fix task). Gets the code right consistently. Its recurring failure is with the requirements AROUND the code: on a module task it silently shorted the README, asserting docs existed rather than writing them; on the bug-fix task it scored 14/15 by correctly fixing the bug and adding tests, then DELETING an existing passing test the task explicitly said to preserve, leaving a green suite that hides the loss. Fast and reliable for the central change, needs its secondary deliverables checked every time.",
     },
-    "Qwen3.6-35B-A3B-UD-Q4_K_M": {
-        "approx_vram_gb": 15, "active_params_b": 3.0, "bfcl_path": None, "backend": "llamacpp",
-        "measured_seconds_per_task": 49,
+    "qwen3.6:35b-a3b": {
+        "approx_vram_gb": 23, "bfcl_path": None, "backend": "ollama",
+        "active_params_b": 3.0,
+        "measured_seconds_per_task": 77,
         "validated_at": "moderate", "documented_failure": False,
-        "notes": "MoE, hybrid attention/recurrent architecture (unsloth GGUF). Not on Ollama's library and not in BFCL (too new as of the Dec 2025 snapshot); found via a community post, not this shortlister, which is part of why HF-based discovery was added. Validated at moderate complexity on two separate tasks: 3/3 through OpenCode+llama.cpp (--fit on --fit-ctx 65536 --fit-target 256 -np 1 -fa on --no-mmap --mlock -b 2048 -ub 2048 -ctk/-ctv q8_0), and on an 8-function module task it delivered all three requirements correctly (28 tests passing, plus a README that actually documented every function) where gpt-oss:20b silently shorted the docs. SPEED IS TASK-DEPENDENT: 43-55s/task on trivial tasks, but 412s on that module task. It's a 22GB model on a 16GB card, so ~7GB sits on the CPU and the offload penalty compounds as context grows (measured 32 t/s decaying to ~4 t/s within one run). Note --mlock holds ~19GB in physical RAM for as long as the server runs; must be stopped manually when done, unlike Ollama it does not auto-unload on idle. (--mlock/--no-mmap are deprecated in recent llama.cpp in favor of --load-mode, still accepted as aliases.)",
+        "notes": "MoE: 35B total but only ~3B active per token, which is why it beats the dense 27B of its own family on speed by ~3x while carrying MORE CPU offload (41%/59% vs 25%/75% on a 16GB card). BEST RESULT MEASURED HERE: 15/15 objective checks on a realistic bug-fix task (find an unreachable branch, fix minimally, add regression tests, preserve existing tests, update a changelog) in 77s, against 242s for the dense 27B on the identical task. Also 3/3 and a clean sweep of an earlier module task. AVAILABLE VIA PLAIN `ollama pull qwen3.6:35b-a3b` (23.9GB): this entry previously said llamacpp-only, which was stale and would have sent a new user to build a llama.cpp server for no reason. The unsloth GGUF (Qwen3.6-35B-A3B-UD-Q4_K_M, 22.1GB) still works via llama.cpp with `--fit on --fit-ctx 65536 --fit-target 256 -np 1 -fa on -ctk/-ctv q8_0` if you want manual CPU/GPU control, but note --mlock there holds ~19GB of RAM until the server is stopped by hand, whereas Ollama auto-unloads.",
     },
     "qwen3.6:27b": {
         "approx_vram_gb": 18, "bfcl_path": None, "backend": "ollama",
         "active_params_b": 27.8,
-        "measured_seconds_per_task": 666,
+        "measured_seconds_per_task": 242,
         "validated_at": "moderate", "documented_failure": False,
-        "notes": "DENSE 27.8B (all parameters active per token), so it is computationally the largest model here despite the smaller headline number than the 35B-A3B MoE. Validated 2026-08-24 on the 8-function module task: all three deliverables correct, 26 tests passing, a complete README, and it verified its own work by running `python -m pytest` correctly where gpt-oss:20b ran bare `pytest`, hit the Windows PATH gotcha, and reported success anyway. Needs ~25% CPU offload on a 16GB card; 666s on that task. Available via plain `ollama pull`, no manual server.",
+        "notes": "DENSE 27.8B (all parameters active per token), so it is computationally the largest model here despite the smaller headline number than the 35B-A3B MoE, and ~3x slower than it in practice (242s vs 77s on the same bug-fix task). Scored a clean 15/15 on that task: minimal fix, every original test preserved, 3 new regression tests, changelog updated. Correctness is not the reason to prefer the MoE sibling; speed is. Validated 2026-08-24 on the 8-function module task: all three deliverables correct, 26 tests passing, a complete README, and it verified its own work by running `python -m pytest` correctly where gpt-oss:20b ran bare `pytest`, hit the Windows PATH gotcha, and reported success anyway. Needs ~25% CPU offload on a 16GB card; 666s on that task. Available via plain `ollama pull`, no manual server.",
     },
     "devstral:24b": {
         "approx_vram_gb": 14, "bfcl_path": None, "backend": "ollama",
         "active_params_b": 23.6,
-        "measured_seconds_per_task": 38,
-        "validated_at": "trivial", "documented_failure": False,
-        "notes": "Dense 23.6B, Mistral's agentic coding model. PREVIOUSLY REJECTED HERE IN ERROR: it was recorded as never invoking structured tool-calling, narrating calls as JSON text instead. Retested 2026-08-24 with an AGENTS.md present and it tool-called cleanly, 38s on a read-and-edit task. The original test almost certainly predated the AGENTS.md fix, and the rejection was never revisited. Also the control in a runtime A/B: identical GGUF and quant scored 2/2 tool calls via Ollama (38s) and 0/2 via llama.cpp (239s, narrated XML pseudo-markup, file untouched), so for this model Ollama's curated chat template is the one that works. Only trivial-task validated so far.",
+        "measured_seconds_per_task": 26,
+        "validated_at": "trivial", "documented_failure": True,
+        "notes": "Dense 23.6B, Mistral's agentic coding model. Tool-calls fine on a trivial read-and-edit (38s, 2/2 real tool calls) after an earlier rejection here was found to be a harness-config artifact. But on the first REALISTIC task it was given (fix a bug in existing code, add regression tests, update a changelog) it did nothing at all: emitted one line of intent, called zero tools, left every file byte-identical, and exited 0. Scored 8/15, exactly the untouched baseline. The clearest case in this project that trivial-task validation predicts nothing about real work. Also the control in a runtime A/B: 2/2 tool calls via Ollama vs 0/2 via llama.cpp on the same GGUF, so for this model Ollama's chat template is the one that works.",
     },
     "qwen2.5-coder:14b": {
         "approx_vram_gb": 9, "active_params_b": 14.0, "bfcl_path": None, "backend": "ollama",

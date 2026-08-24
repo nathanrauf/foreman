@@ -1,0 +1,20 @@
+This project has a bug in its pricing code.
+
+Reported issue: an order with a subtotal of $500 or more is charged the wrong
+amount. A $600 subtotal should get a 20% discount and come to $480.00, but it
+is currently coming to $540.00.
+
+Do all of the following:
+
+1. Read pricing.py and find the cause of the bug. The docstring on
+   tier_discount describes the intended behaviour; the code does not match it.
+2. Fix it, changing as little as possible. Do not rewrite functions that are
+   already correct, and do not change the documented tier boundaries.
+3. Add regression tests to test_pricing.py that would have caught this bug.
+   Cover the $500 boundary exactly, and a value above it.
+4. Make sure the existing tests in test_pricing.py still pass. Do not delete
+   or weaken any existing test.
+5. Add a line to the "Unreleased" section of CHANGELOG.md describing the fix.
+
+When you are done, run `python -m pytest -q` yourself and confirm every test
+passes before reporting completion.

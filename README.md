@@ -73,6 +73,19 @@ Built to run unattended, so it earns trust by being tested unattended. Real find
 
 **A different failure shape showed up on a bigger task: silent partial completion.** `gpt-oss:20b` built a real 8-function module (JSON persistence, validation, a test suite, docs) correctly, independently verified, all 19 tests passing. But the README it wrote for the same task didn't actually document anything; it just asserted that documentation existed, and the model reported the task complete regardless. The core deliverable was right, one named requirement wasn't, and nothing in the run's own output flagged the gap. Worth remembering that "did the model complete the task" isn't one yes/no; check every requirement it was given, not just the main one.
 
+**What a fresh evaluation actually found.** After enough changes accumulated, the whole thing was re-run from scratch the way a new user would: run `foreman-recommend`, take what it says, test the top candidates on one realistic task. Not the greenfield "write a module" task used earlier, but the shape of actual work: an existing codebase with a bug (a tier-discount branch made unreachable by check ordering), where the fix must be minimal, regression tests added, existing tests preserved, and a changelog updated. All six existing tests pass at the start, so running the suite doesn't reveal anything; the model has to read the spec in the docstring and notice the code disagrees. Every result was graded by 15 objective checks run independently of whatever the model claimed.
+
+| | score | time | what happened |
+|---|---|---|---|
+| `qwen3.6:35b-a3b` | **15/15** | **77s** | Minimal fix, all tests kept, 3 added, changelog updated |
+| `qwen3.6:27b` | 15/15 | 242s | Same quality, 3x slower |
+| `gpt-oss:20b` | 14/15 | 36s | Correct fix, then silently deleted an existing test |
+| `devstral:24b` | 8/15 | 26s | Did nothing. Zero tool calls, exit code 0 |
+
+Three things came out of that. **The recommender's own top pick was mislabelled**: it listed the winner as llama.cpp-only, which was stale, and would have sent a new user to build a server for a model that is now a plain `ollama pull`. **`devstral:24b` had been promoted hours earlier** on a 38-second trivial read-and-edit, and its first real task produced no changes whatsoever while exiting cleanly. And **`gpt-oss:20b`'s failure was invisible**: it deleted a passing test the task said to preserve, leaving a green suite that hides the loss.
+
+None of the three failures announced itself. Every one required checking the actual files.
+
 **Is the runtime the problem? Sometimes, and not in the direction you'd guess.** Community advice around local tool-calling failures is often "ditch Ollama, use llama.cpp, it's a chat-template issue." This project had real evidence for that: `qwen3-coder:30b` timed out completely under Ollama and ran fine under llama.cpp. So we tested it properly, same model, same Q4_K_M quant, same task, same `AGENTS.md`, one clean GPU:
 
 | `devstral:24b` | Ollama | llama.cpp |
