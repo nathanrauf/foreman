@@ -96,6 +96,27 @@ DISCOVERY_SEARCH_TERMS = ["instruct GGUF", "coder GGUF", "agent GGUF"]
 #   None               not empirically tested here at all.
 VALIDATION_RANK = {"moderate": 3, "moderate-partial": 2, "trivial": 1, None: 0}
 
+# Mixture-of-Experts models activate only a fraction of their weights per
+# token, so generation speed tracks ACTIVE parameters while capability tracks
+# total. Ignoring the distinction is actively misleading: a dense 27.8B model
+# measured here was slower than a 35B MoE with ~3B active, because the dense
+# one does roughly 9x the arithmetic per token despite the smaller headline
+# number. Ranking on total parameters alone would call the dense model the
+# bigger, better one and be badly wrong about what it costs to run.
+#
+# Ollama's metadata doesn't expose expert counts, so this is recovered from
+# naming conventions (Qwen's "A3B" means Active 3B) and recorded by hand for
+# known models. Absent either, active params are unknown, not assumed equal
+# to total.
+MOE_ACTIVE_PARAMS_RE = re.compile(r"[-_]a(\d+(?:\.\d+)?)b\b", re.I)
+
+
+def parse_active_params_b(name):
+    """Active parameter count in billions from an MoE naming convention, or
+    None if the name doesn't declare one."""
+    m = MOE_ACTIVE_PARAMS_RE.search(name)
+    return float(m.group(1)) if m else None
+
 # tag -> approx VRAM at Q4-class quantization (GB), BFCL result-dir name (or
 # None if not covered), acquisition backend, how far it's actually been
 # validated, whether it has a documented hard failure, and notes carrying
@@ -105,46 +126,53 @@ VALIDATION_RANK = {"moderate": 3, "moderate-partial": 2, "trivial": 1, None: 0}
 # --fit-style manual CPU/GPU tuning Ollama doesn't expose).
 KNOWN_CANDIDATES = {
     "qwen3:8b": {
-        "approx_vram_gb": 8, "bfcl_path": "Qwen_Qwen3-8B-FC", "backend": "ollama",
+        "approx_vram_gb": 8, "active_params_b": 8.0, "bfcl_path": "Qwen_Qwen3-8B-FC", "backend": "ollama",
         "measured_seconds_per_task": 33,
         "validated_at": "trivial", "documented_failure": True,
         "notes": "Dense. The fastest candidate found (28-39s/task, 3/3) but ONLY on trivial single-file read-and-edit tasks. On the first moderately harder task it was given it failed outright and silently: skipped the actual file edit after three failed attempts, wrote a test file for a class that doesn't exist anywhere, syntax error included, and reported no problem. Speed is not the reason to pick a model; this is why validation tier outranks it here.",
     },
     "qwen3:14b": {
-        "approx_vram_gb": 10, "bfcl_path": "qwen3-14b-FC", "backend": "ollama",
+        "approx_vram_gb": 10, "active_params_b": 14.0, "bfcl_path": "qwen3-14b-FC", "backend": "ollama",
         "validated_at": None, "documented_failure": False,
         "notes": "Dense. Lower BFCL multi-turn score than qwen3:8b despite being larger; not yet empirically tested.",
     },
     "qwen3:32b": {
-        "approx_vram_gb": 20, "bfcl_path": "Qwen_Qwen3-32B-FC", "backend": "ollama",
+        "approx_vram_gb": 20, "active_params_b": 32.0, "bfcl_path": "Qwen_Qwen3-32B-FC", "backend": "ollama",
         "validated_at": None, "documented_failure": False,
         "notes": "Dense. Highest BFCL score of the Qwen3 family checked, but needs CPU offload on a 16GB card. Not yet empirically tested; offload previously correlated with severe slowdowns under OpenCode.",
     },
     "qwen3-coder:30b": {
-        "approx_vram_gb": 19, "bfcl_path": "qwen3-30b-a3b-instruct-2507-FC", "backend": "ollama",
+        "approx_vram_gb": 19, "active_params_b": 3.3, "bfcl_path": "qwen3-30b-a3b-instruct-2507-FC", "backend": "ollama",
         "measured_seconds_per_task": None,  # timed out (>180s) via OpenCode+Ollama; 190s via OpenCode+llama.cpp+--fit
         "validated_at": "trivial", "documented_failure": False,
         "notes": "MoE ~3.3B active params. BFCL path is the closest available match (base instruct, not the coder fine-tune), approximate. Validated reliable (3/3) on trivial tasks but needs CPU offload on 16GB; times out through OpenCode's heavy prompt over plain Ollama, but works via llama.cpp with --fit (see docs/opencode-setup.md).",
     },
     "gpt-oss:20b": {
-        "approx_vram_gb": 13, "bfcl_path": None, "backend": "ollama",
+        "approx_vram_gb": 13, "active_params_b": 3.6, "bfcl_path": None, "backend": "ollama",
         "measured_seconds_per_task": 110,
         "validated_at": "moderate-partial", "documented_failure": False,
         "notes": "Not in BFCL's coverage. 3/3 on trivial tasks through OpenCode (with AGENTS.md fix), fits fully in 16GB VRAM. On a real 8-function module task it got the code and tests right (19 tests, all passing, independently verified) but silently shorted the README requirement, asserting documentation existed rather than writing it, and reported completion anyway. Reliable for code, verify secondary deliverables.",
     },
     "Qwen3.6-35B-A3B-UD-Q4_K_M": {
-        "approx_vram_gb": 15, "bfcl_path": None, "backend": "llamacpp",
+        "approx_vram_gb": 15, "active_params_b": 3.0, "bfcl_path": None, "backend": "llamacpp",
         "measured_seconds_per_task": 49,
         "validated_at": "moderate", "documented_failure": False,
         "notes": "MoE, hybrid attention/recurrent architecture (unsloth GGUF). Not on Ollama's library and not in BFCL (too new as of the Dec 2025 snapshot); found via a community post, not this shortlister, which is part of why HF-based discovery was added. Validated at moderate complexity on two separate tasks: 3/3 through OpenCode+llama.cpp (--fit on --fit-ctx 65536 --fit-target 256 -np 1 -fa on --no-mmap --mlock -b 2048 -ub 2048 -ctk/-ctv q8_0), and on an 8-function module task it delivered all three requirements correctly (28 tests passing, plus a README that actually documented every function) where gpt-oss:20b silently shorted the docs. SPEED IS TASK-DEPENDENT: 43-55s/task on trivial tasks, but 412s on that module task. It's a 22GB model on a 16GB card, so ~7GB sits on the CPU and the offload penalty compounds as context grows (measured 32 t/s decaying to ~4 t/s within one run). Note --mlock holds ~19GB in physical RAM for as long as the server runs; must be stopped manually when done, unlike Ollama it does not auto-unload on idle. (--mlock/--no-mmap are deprecated in recent llama.cpp in favor of --load-mode, still accepted as aliases.)",
     },
+    "qwen3.6:27b": {
+        "approx_vram_gb": 18, "bfcl_path": None, "backend": "ollama",
+        "active_params_b": 27.8,
+        "measured_seconds_per_task": 666,
+        "validated_at": "moderate", "documented_failure": False,
+        "notes": "DENSE 27.8B (all parameters active per token), so it is computationally the largest model here despite the smaller headline number than the 35B-A3B MoE. Validated 2026-08-24 on the 8-function module task: all three deliverables correct, 26 tests passing, a complete README, and it verified its own work by running `python -m pytest` correctly where gpt-oss:20b ran bare `pytest`, hit the Windows PATH gotcha, and reported success anyway. Needs ~25% CPU offload on a 16GB card; 666s on that task. Available via plain `ollama pull`, no manual server.",
+    },
     "qwen2.5-coder:14b": {
-        "approx_vram_gb": 9, "bfcl_path": None, "backend": "ollama",
+        "approx_vram_gb": 9, "active_params_b": 14.0, "bfcl_path": None, "backend": "ollama",
         "validated_at": None, "documented_failure": True,
         "notes": "REJECTED: no documented tool-calling support (confirmed via its own Hugging Face model card), 0/2 empirical failures through OpenCode.",
     },
     "qwen2.5:14b-instruct": {
-        "approx_vram_gb": 9, "bfcl_path": None, "backend": "ollama",
+        "approx_vram_gb": 9, "active_params_b": 14.0, "bfcl_path": None, "backend": "ollama",
         "validated_at": None, "documented_failure": True,
         "notes": "REJECTED: inconsistent through OpenCode (1 success, 1 hang with zero output on an identical run); raw API tool calls work fine, so the flakiness is specific to OpenCode's full prompt/schema load.",
     },
@@ -285,6 +313,7 @@ def discover_ollama_candidates(budget_gb, limit):
             results.append({
                 "tag": f"{name}:{tag}",
                 "params_b": params_b,
+                "active_params_b": parse_active_params_b(f"{name}:{tag}"),
                 "approx_vram_gb": round(size_gb, 1),
                 "fits_without_offload": fits,
                 "capabilities": caps,
@@ -375,6 +404,7 @@ def main():
             "backend": info.get("backend", "ollama"),
             "validated_at": info.get("validated_at"),
             "documented_failure": info.get("documented_failure", False),
+            "active_params_b": info.get("active_params_b"),
             "notes": info["notes"],
         })
 
@@ -409,7 +439,11 @@ def main():
             verified_str += "  [HAS A DOCUMENTED FAILURE]"
         print(f"- {r['tag']}  [{r['backend']}]")
         print(f"    Verified: {verified_str}")
-        print(f"    Speed: {speed_str}   BFCL multi-turn: {score_str}   VRAM: ~{r['approx_vram_gb']}GB ({fit_str})")
+        active = r.get("active_params_b")
+        arch_str = "active params unknown"
+        if active is not None:
+            arch_str = f"~{active}B active/token"
+        print(f"    Speed: {speed_str} ({arch_str})   BFCL multi-turn: {score_str}   VRAM: ~{r['approx_vram_gb']}GB ({fit_str})")
         print(f"    {r['notes']}")
         print()
 
@@ -433,7 +467,9 @@ def main():
         for r in ollama_found:
             fit_str = "fits, no offload" if r["fits_without_offload"] else "NEEDS CPU OFFLOAD"
             print(f"- {r['tag']}  [{r['backend']}]")
-            print(f"    VRAM: ~{r['approx_vram_gb']}GB ({fit_str})   capabilities: {', '.join(r['capabilities'])}")
+            active = r.get("active_params_b")
+            arch_str = f"MoE, ~{active}B active/token" if active else "active params unknown"
+            print(f"    VRAM: ~{r['approx_vram_gb']}GB ({fit_str})   {arch_str}   capabilities: {', '.join(r['capabilities'])}")
             print(f"    {r['notes']}")
             print()
 

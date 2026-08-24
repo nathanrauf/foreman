@@ -93,14 +93,50 @@ paper. The protocol, run against the top 1-2 candidates from stage 1:
 5. After each run, check the file directly. Do not trust the model's own
    "done" or "successfully edited" message. That has been wrong before
    while sounding completely confident about it.
-6. Note the timing. A model that works but takes three minutes for a
-   trivial task is a different recommendation than one that takes thirty
-   seconds, even at identical correctness. This has decided between
-   otherwise-similar candidates more than once.
+6. Note the timing, **under controlled conditions**. A model that works but
+   takes three minutes for a trivial task is a different recommendation
+   than one that takes thirty seconds, even at identical correctness. This
+   has decided between otherwise-similar candidates more than once.
+
+   Timings compared across different conditions are worthless, and this
+   project produced exactly that before writing the rule down: three models
+   were measured across two runtimes, two quantization formats (Q4_K_M and
+   MXFP4), different context sizes, different KV cache settings, and
+   different CPU/GPU splits, then compared as though the numbers meant
+   something. Hold these fixed across every candidate in a comparison:
+
+   - **The runtime.** Ollama and llama.cpp are not interchangeable; one
+     model here timed out entirely under Ollama and ran fine under
+     llama.cpp. Compare within a runtime, and say which one.
+   - **Context size and KV cache quantization.** OpenCode requests a large
+     window by default; a candidate given 32K and one given 64K are not
+     being asked the same question.
+   - **Parallel slots** (`OLLAMA_NUM_PARALLEL=1`, or `-np 1`).
+   - **The task and `AGENTS.md`,** byte for byte. Use the same task file.
+   - **A clean GPU.** Check `nvidia-smi` before every run. An Ollama
+     `llama-server.exe` can hold VRAM after `ollama ps` reports nothing
+     loaded, and llama.cpp's `--fit` balances against whatever is free at
+     startup, so a leftover process silently pushes more of the model onto
+     the CPU and every number after that is wrong.
+
+   Record what could not be held equal rather than hiding it. Quantization
+   format especially: a model published as MXFP4 cannot be compared to one
+   at Q4_K_M on equal terms, and pretending otherwise is worse than noting
+   the gap.
 7. If there's time, try one task past trivial. A model that's 3/3 on
    "read a file and edit one line" has been wrong before on anything
    harder, silently and without complaint. Treat trivial-task success as
    validated for trivial tasks, not as a general guarantee.
+8. **Record active parameters, not just total.** Mixture-of-Experts models
+   activate a fraction of their weights per token, so speed tracks active
+   parameters while capability tracks total. The distinction is not
+   academic: a dense 27.8B model measured here was slower than a 35B MoE
+   with ~3B active, because the dense one does roughly 9x the arithmetic
+   per token despite the smaller headline number. Ranking on total
+   parameters calls the dense model the bigger, better one and is badly
+   wrong about what it costs to run. Ollama's metadata doesn't expose
+   expert counts, so read it off the name where declared (Qwen's "A3B"
+   means Active 3B) or the model card, and record it in `CANDIDATES`.
 
 Only recommend a model after it clears steps 4-5 at 3/3. Record the result
 (model, VRAM footprint, timing, pass rate, and how far past trivial it was
