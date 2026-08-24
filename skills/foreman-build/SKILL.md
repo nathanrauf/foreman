@@ -19,9 +19,12 @@ This file is the short version for driving it once that's done.
 
 ## Before launching
 
-- **Write a fully self-contained task description.** The local model sees
-  nothing from this conversation except the task string. State the goal,
-  constraints, relevant file paths, and what "done" looks like.
+- **Write a fully self-contained task description, to a file.** The local
+  model sees nothing from this conversation except what's in that file.
+  State the goal, constraints, relevant file paths, and what "done" looks
+  like. Write it to a file and attach it (`-f`) rather than inlining it in
+  the message string; see the Windows note below for why this matters, not
+  just for shell-quoting convenience.
 - **Know which model to use.** If that's not already established for this
   machine, run `foreman-recommend` first rather than guessing.
 - **Match the checkpoint window to the model.** A fast, VRAM-light model
@@ -32,8 +35,8 @@ This file is the short version for driving it once that's done.
 ## Launching
 
 ```bash
-timeout 240 opencode run "self-contained task description" \
-  -m ollama/<model> --dir /path/to/project --auto
+timeout 240 opencode run "Follow the attached task description." \
+  -f task.txt -m ollama/<model> --dir /path/to/project --auto
 ```
 
 Run this via the Bash tool in the background if the task is expected to
@@ -43,6 +46,19 @@ which `--auto` auto-approves). The external `timeout` is what actually
 bounds a run that goes wrong, not anything internal to OpenCode. Pick the
 timeout to match the task's real complexity; a trivial edit needs under a
 minute, something touching several files can need several.
+
+**On Windows, never put the real task inline in the message string.**
+`opencode` resolves to a `.cmd` wrapper there, and cmd.exe's batch-argument
+handling silently drops or reorders flags when an argument contains a
+newline, which any real multi-line task description will. The practical
+effect: `-m` gets ignored with no error, the run silently falls back to
+whatever model `opencode.json` defaults to, and the exit code is still 0.
+Confirmed concretely: a run against a real task fell back this way to a
+model this project had already rejected for tool-calling, and produced
+unrelated, wrong output narrated as text instead of real tool calls,
+with nothing in the run's own output indicating anything had gone wrong.
+The `-f task.txt` pattern above avoids this because the message string
+itself stays short and single-line.
 
 ## Reviewing the result: do not skip this
 
@@ -54,13 +70,23 @@ past completion and silently duplicated content across five files while
 reporting success. Neither of those surfaced as an error in the tool's own
 output. Only checking the actual result caught them.
 
+Failure isn't always total, either. On one run, the code and test suite
+were both genuinely correct (independently verified, tests actually
+passing), but a secondary requirement in the same task, a README
+documenting each function, came back just asserting that documentation
+existed without providing it, and the model reported the task complete
+anyway. Check every requirement the task named, not just the main
+deliverable.
+
 Every time, regardless of how confident the output sounds:
 
 1. Read the actual file(s) changed, or run `git diff` if the working
    directory is a repo.
 2. Run any tests or verification the task called for, and read the actual
    output rather than trusting a summary of it.
-3. Only then report the task done.
+3. Check every requirement the task listed individually was actually met,
+   not just the central one.
+4. Only then report the task done.
 
 If something's wrong, don't just retry blindly. Either relaunch with a
 sharper, corrected task description, or fix it directly if that's faster

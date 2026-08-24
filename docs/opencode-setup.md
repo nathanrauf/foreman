@@ -6,15 +6,29 @@ task; OpenCode runs it against Ollama.
 
 ## Does Claude Code itself work with Ollama directly?
 
-No. Claude Code only supports Anthropic's own infrastructure (the Anthropic
-API, Bedrock, Vertex, Foundry), and its docs are explicit that routing to
-non-Claude models through a gateway is unsupported.
+This changed since it was first checked, and is worth re-testing again in
+the future: Ollama v0.14.0+ (January 2026) added a native Anthropic
+Messages API endpoint (`/v1/messages`). Pointing `ANTHROPIC_BASE_URL` at a
+local Ollama instance, with `ANTHROPIC_AUTH_TOKEN` set to any placeholder
+value, now gets a real response at the raw protocol level. Confirmed with a
+direct API call on this machine (Ollama 0.32.7): a normal Anthropic-shaped
+response, thinking block included. That supersedes the older unofficial
+`ollama launch claude` gateway hack, which used to produce nothing past an
+internal title-generation call.
 
-Ollama ships an unofficial integration (`ollama launch claude`) that spins
-up a gateway and points a real `claude` process at it. In testing, this
-never produced a working response across several invocation styles: it got
-as far as an internal title-generation call and then produced nothing for
-the actual prompt. Not worth pursuing.
+Re-tested through the actual `claude` CLI itself, not just the raw API,
+and it still isn't usable for real work. Same task both models handle
+fine through OpenCode (read a file, report its contents), same
+`ANTHROPIC_BASE_URL` setup, run 2026-08-23:
+- `qwen3-coder:30b` narrated the tool call as literal text
+  (`<function=Read>...`) instead of invoking it.
+- `qwen3:8b` fabricated a permission-restriction excuse and never
+  attempted a tool call at all.
+
+Same failure family documented throughout this project, just against
+Claude Code's own system prompt and tool schema instead of OpenCode's.
+Not adopted as an execution path for that reason. OpenCode remains the
+harness this project actually uses.
 
 ## Setup
 
@@ -47,7 +61,9 @@ Without this file, OpenCode has no Ollama provider configured and fails with
 an opaque `UnknownError` rather than a clear message. If that happens,
 check this file exists.
 
-3. Run: `opencode run "your task" -m ollama/qwen3:8b --dir /path/to/project --auto`
+3. Run: `opencode run "Follow the attached task." -f task.txt -m ollama/qwen3:8b --dir /path/to/project --auto`
+   (write the real task to `task.txt` first; see the note on Windows below
+   for why the task shouldn't go directly in the message string)
 
 ## Required: two Ollama settings, or you can crash your machine
 
@@ -106,10 +122,30 @@ simplicity of this setup, weigh that trade-off before relying on it.
 Launch with a timeout, review the result, decide what's next: the same loop
 used to validate every model in this repo.
 
+**On Windows, put the task in a file and attach it; don't inline it in the
+message string.** `opencode`'s npm install resolves to a `.cmd` batch-file
+wrapper, and cmd.exe's batch-argument handling silently drops or reorders
+CLI flags when an argument contains an embedded newline. A real multi-line
+task description does exactly that, and the practical effect is `-m` gets
+ignored without any error: the run silently falls back to whatever model
+`opencode.json`'s top-level `model` is set to. Confirmed on this machine:
+a real task run this way silently used `qwen2.5-coder:14b`, a model this
+project's own testing already rejected for tool-calling, instead of the
+model actually requested, and produced unrelated, wrong output narrated as
+text instead of real tool calls. It still exited 0. Nothing about the run
+signaled that the wrong model had been used.
+
+The fix is to keep the message argument short and single-line, and pass the
+real task through `-f`:
+
 ```bash
-timeout 240 opencode run "self-contained task description" \
-  -m ollama/<model> --dir /path/to/project --auto
+timeout 240 opencode run "Follow the attached task description." \
+  -f task.txt -m ollama/<model> --dir /path/to/project --auto
 ```
+
+This isn't Windows-only paranoia: writing the task to a file rather than
+inlining it is already `foreman-errand`'s convention for the same category
+of shell-quoting reasons, so this just applies the same practice here.
 
 Then read the diff, run any relevant tests, and only report success once
 that's independently confirmed. Every "the model says it's done" claim in
@@ -139,6 +175,18 @@ verify regardless of how the task went.
 
 **`gpt-oss:20b`.** 13GB, fits fully in 16GB VRAM, reliable, ~110s/task.
 Solid fallback if `qwen3:8b` doesn't suit a specific task.
+
+Tested on a task past trivial (an 8-function module with JSON persistence,
+validation, a real test suite, and a README), 2026-08-23: got the actual
+code right. All 8 functions correct, 19 tests written that all pass under
+independent verification. But the README it wrote didn't do what the task
+asked (document each function's signature, behavior, and exceptions); it
+just asserted that documentation existed elsewhere without providing it,
+then reported the file set complete regardless. A different failure shape
+than `qwen3:8b`'s outright breakage above: the core deliverable was
+correct, one secondary requirement was silently shorted. Worth remembering
+that "did the model complete the task" isn't a single yes/no; check every
+requirement, not just the main one.
 
 **`qwen3-coder:30b`.** Reliable (3/3) but not through this exact setup. It's
 an 18GB MoE model that splits ~35% CPU / 65% GPU on a 16GB card at OpenCode's
