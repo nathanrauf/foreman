@@ -1,6 +1,6 @@
 ---
 name: foreman-recommend
-description: This skill should be used when the user asks "what model should I use for local Ollama/OpenCode work", "recommend a local model", "which model fits my GPU", or when setting up ollama-agent-head/OpenCode for the first time on a machine and no validated model is known yet — it shortlists candidates by hardware fit and real tool-calling benchmark data instead of guessing from marketing claims or blog posts.
+description: This skill should be used when the user asks "what model should I use for local Ollama/OpenCode work", "recommend a local model", "which model fits my GPU", or when setting up OpenCode for the first time on a machine and no validated model is known yet — it shortlists candidates by hardware fit and real tool-calling benchmark data instead of guessing from marketing claims or blog posts.
 ---
 
 # Foreman: Model Recommendation
@@ -64,9 +64,8 @@ protocol, run against the top 1-2 candidates from stage 1:
    (Without this, otherwise-capable models often narrate a tool call as
    text instead of invoking it, especially after a retry — a known failure
    mode, not evidence the model can't do the task.)
-4. Run a real tool-calling task through the harness actually being used
-   (OpenCode or `ollama-agent-head`) — e.g. "read file X, add a line to
-   it" — **three times**, not once. A single success can be luck.
+4. Run a real tool-calling task through OpenCode — e.g. "read file X, add a
+   line to it" — **three times**, not once. A single success can be luck.
 5. After each run, check the file directly. Do not trust the model's own
    "done"/"successfully edited" message — that has been wrong before while
    sounding completely confident.

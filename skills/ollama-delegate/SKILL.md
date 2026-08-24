@@ -68,7 +68,7 @@ python "$HOME/.claude/skills/ollama-delegate/scripts/ask_ollama.py" \
 - This is a single stateless call, not a conversation — there is no session
   or history to manage. For a task that needs multiple turns of local
   back-and-forth or unattended tool use (running commands, editing files),
-  use the `ollama-agent-head` skill instead.
+  use OpenCode instead (see `docs/opencode-setup.md` in the foreman repo).
 - If Ollama is not installed or not running, say so plainly and fall back to
   doing the task directly rather than silently spending more effort trying to
   fix the local setup mid-task.

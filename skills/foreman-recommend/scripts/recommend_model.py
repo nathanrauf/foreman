@@ -75,7 +75,7 @@ KNOWN_CANDIDATES = {
     "qwen3-coder:30b": {
         "approx_vram_gb": 19, "bfcl_path": "qwen3-30b-a3b-instruct-2507-FC", "backend": "ollama",
         "measured_seconds_per_task": None,  # timed out (>180s) via OpenCode+Ollama; 190s via OpenCode+llama.cpp+--fit
-        "notes": "MoE ~3.3B active params. BFCL path is the closest available match (base instruct, not the coder fine-tune) — approximate. Validated reliable (3/3) but needs CPU offload on 16GB; times out through OpenCode's heavy prompt (worked in the repo's own lean ollama-agent-head harness, and via llama.cpp with --fit).",
+        "notes": "MoE ~3.3B active params. BFCL path is the closest available match (base instruct, not the coder fine-tune) — approximate. Validated reliable (3/3) but needs CPU offload on 16GB; times out through OpenCode's heavy prompt over plain Ollama, but works via llama.cpp with --fit (see docs/opencode-setup.md).",
     },
     "gpt-oss:20b": {
         "approx_vram_gb": 13, "bfcl_path": None, "backend": "ollama",
