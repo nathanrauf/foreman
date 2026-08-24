@@ -119,7 +119,13 @@ def parse_active_params_b(name):
     return float(m.group(1)) if m else None
 
 # measured_seconds_per_task is only comparable when every entry is timed on
-# the SAME task under the same conditions. The current numbers are all from
+# the SAME task under the same conditions, AND through the same agent
+# harness. The harness is not neutral: its system prompt and tool schema
+# are tokens the model must read before starting, and that prefill is
+# expensive on a model doing CPU offload. Measured here, Pi ran the same
+# task on the same model ~32% faster than OpenCode (52.7s against 77.0s,
+# three runs each, identical output). Every number below is an OPENCODE
+# timing; re-time the whole set before comparing against another harness. The current numbers are all from
 # one realistic bug-fix task (find an unreachable branch in existing code,
 # fix it minimally, add regression tests, preserve existing tests, update a
 # changelog), Ollama, context 32768, OLLAMA_NUM_PARALLEL=1, KV cache q8_0,

@@ -108,6 +108,12 @@ paper. The protocol, run against the top 1-2 candidates from stage 1:
    - **The runtime.** Ollama and llama.cpp are not interchangeable; one
      model here timed out entirely under Ollama and ran fine under
      llama.cpp. Compare within a runtime, and say which one.
+   - **The agent harness.** Also not neutral, and worth more than it
+     looks: its system prompt and tool schema are tokens the model reads
+     before starting, which is expensive under CPU offload. Pi ran the
+     same task on the same model ~32% faster than OpenCode here, with
+     identical output. A timing without a harness attached is not a
+     number anyone can reuse.
    - **Context size and KV cache quantization.** OpenCode requests a large
      window by default; a candidate given 32K and one given 64K are not
      being asked the same question.
