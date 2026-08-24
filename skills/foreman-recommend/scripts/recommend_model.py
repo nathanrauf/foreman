@@ -50,6 +50,14 @@ OLLAMA_REGISTRY = "https://registry.ollama.ai/v2/library"
 # the size lookup is unambiguous.
 OLLAMA_TAG_SUFFIXES = ["-q4_K_M", ""]
 
+# Tags to try for models whose library page lists no parameter-size badges.
+# Some families tag by quantization only (glm-4.7-flash publishes q4_K_M,
+# q8_0, bf16 and no 30b tag), and building tags purely from size labels made
+# every one of them invisible: the parser saw the model and its tool-calling
+# capability, found no sizes, and silently skipped it. That hid a whole
+# family of current tool-capable models from discovery.
+OLLAMA_SIZELESS_TAGS = ["q4_K_M", "latest"]
+
 # Don't bother pulling manifests for models far too large for any consumer
 # card; keeps the number of registry round-trips sane.
 OLLAMA_MAX_PARAMS_B = 40
@@ -208,11 +216,11 @@ def _parse_ollama_library(html):
         yield m.group(1), caps, sizes
 
 
-def ollama_tag_size_gb(model, size_label):
-    """Total download size for an Ollama tag, from the registry manifest.
-    Real layer sizes, not an estimate from parameter count."""
-    for suffix in OLLAMA_TAG_SUFFIXES:
-        tag = f"{size_label}{suffix}"
+def ollama_tag_size_gb(model, candidate_tags):
+    """Total download size for the first resolvable Ollama tag, from the
+    registry manifest. Real layer sizes, not an estimate from parameter
+    count."""
+    for tag in candidate_tags:
         try:
             data = hf_get(f"{OLLAMA_REGISTRY}/{model}/manifests/{tag}")
         except Exception:
@@ -256,10 +264,15 @@ def discover_ollama_candidates(budget_gb, limit):
             except ValueError:
                 continue
             if params_b and params_b <= OLLAMA_MAX_PARAMS_B:
-                parsed.append((params_b, size_label))
+                parsed.append((params_b, [f"{size_label}{s}" for s in OLLAMA_TAG_SUFFIXES]))
+        if not parsed:
+            # No size badges: the family tags by quantization only. Params
+            # are unknown, so 0 sorts it last among fitting candidates rather
+            # than letting an unknown masquerade as small.
+            parsed.append((0.0, OLLAMA_SIZELESS_TAGS))
         offload_ceiling = budget_gb * OFFLOAD_BUDGET_MULTIPLIER
-        for params_b, size_label in sorted(parsed, reverse=True):
-            found = ollama_tag_size_gb(name, size_label)
+        for params_b, candidate_tags in sorted(parsed, reverse=True):
+            found = ollama_tag_size_gb(name, candidate_tags)
             if not found:
                 continue
             tag, size_gb = found
