@@ -6,16 +6,19 @@ Everything here was tested on a real machine (RTX 5070 Ti, 16GB VRAM, Windows 11
 
 ## How much this actually saves
 
-Measured, not guessed, across two tasks of different size, each done twice: once with Claude doing the work directly, once with Claude only writing the task, launching, and reviewing while a local model did the work.
+Measured, not guessed. Each task was done twice: once with Claude doing the work directly, once with Claude only writing the task, launching, and reviewing while a local model did it. What's counted is Claude's own effort, since that's what you pay for: tool calls made, and characters generated.
 
-| Task | Claude's tool calls (direct) | Claude's tool calls (delegated) | Characters Claude generated (direct) | Characters Claude generated (delegated) |
-|---|---|---|---|---|
-| Extend a module: 2 functions, validation, tests | 6 | 3 | ~1,874 | 721 (task description) |
-| Build a module from scratch: 8 functions, JSON persistence, validation, a real test suite, docs | 4 | 3 | 7,042 | 2,205 (task description) |
+| Task | Claude alone | With foreman | Claude-side saving |
+|---|---|---|---|
+| Fix a bug in existing code (a 4-line change, plus tests and a changelog) | 5 calls, 571 chars | 3 calls, 988 chars | **73% worse** |
+| Extend a module: 2 functions, validation, tests | 6 calls, ~1,874 chars | 3 calls, 721 chars | **62% saved** |
+| Build a module from scratch: 8 functions, JSON persistence, validation, a real test suite, docs | 4 calls, 7,042 chars | 3 calls, 2,205 chars | **69% saved** |
 
-The gap isn't the tool-call count so much as what those calls cost. The direct path is almost entirely generation, code Claude wrote character by character; it went from 1,874 to 7,042 characters generated as the task got bigger. The delegated path's tool-call count stayed flat at 3 across both tasks (write the task file, launch, verify), because that's structurally fixed regardless of task size, and its character count is just the task description, which grew far slower than the code it was describing. Two data points aren't a curve, but the direction is the expected one: write a task description for something bigger, and the direct path's cost grows with it while the delegated path's doesn't. There's no in-conversation way to check real dollar cost, only Claude Code's own `/cost` for that.
+The first row is the one worth dwelling on, because it goes the wrong way. Describing a small surgical fix precisely enough for a model that cannot see your conversation took 988 characters; making the fix took 571. Delegating cost nearly twice as much as doing it. That isn't a measurement error, it's the actual shape of the trade: the task description is a fixed overhead that doesn't shrink just because the job is small.
 
-It isn't free money, though. The same setup, run against a smaller model on a slightly harder task, silently produced broken output and reported success anyway (see the findings section). On the larger task above, a more reliable model got the actual code right, independently verified with all tests passing, but silently shorted one secondary requirement (the README) while still reporting the task complete. Neither failure showed up without checking. Catching either costs a review cycle, sometimes a full do-over, which erases the savings for that run. The realistic version of this pitch: savings scale well when the model picked for the job is actually up to the job, and `foreman-recommend` exists specifically to make that less of a guess.
+Which sets the rule this whole project runs on. **Delegation pays when the output is large relative to its description.** Writing a module from scratch is eight functions of code from a couple of paragraphs of spec, so it saves ~69%. A four-line bug fix is the inverse and loses. Claude's side of the delegated path stays flat at 3 tool calls no matter the task size (write the task, launch, verify), so everything depends on how much generation you're handing off. There's no in-conversation way to check real dollar cost, only Claude Code's own `/cost` for that.
+
+It isn't free money even in the winning rows. On the module task, the model got the code right and verified, then silently shorted the README it was told to write. On the bug-fix task one model deleted a passing test and another did nothing at all while exiting cleanly. Catching any of that costs a review cycle, sometimes a full redo, which erases that run's saving. The honest pitch: savings scale with task size when the model is up to the job, and `foreman-recommend` exists to make that less of a guess.
 
 ## Why involve Claude at all
 
@@ -27,7 +30,7 @@ A fair question, since [OpenCode](https://opencode.ai) can already run an autono
 
 **Judgment at the edges.** Local models are good at mechanical execution and weaker at knowing whether the approach they picked is actually the right one: the kind of moment where a human reviewing the work says "hold on, that's not the way to do this, try X instead."
 
-Where this gets thin, honestly: for something small and well-specified (summarize this log, fix this one-line bug), the value of Claude reviewing beyond "kick it off and check the result" is real but small. That's not a gap in the reasoning. It's exactly where the credits get saved, since the value concentrates on tasks with real ambiguity or where correctness actually matters.
+Where this gets thin, honestly: for something small and well-specified (summarize this log, fix this one-line bug), the value of Claude reviewing beyond "kick it off and check the result" is real but small. The savings table above puts a number on it, and on a small enough task delegation is simply the wrong call. The value concentrates on tasks big enough that the generation dwarfs the description, and on ones where correctness matters enough to be worth verifying.
 
 ## What's here
 

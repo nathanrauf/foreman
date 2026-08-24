@@ -55,6 +55,19 @@ set if you change any of them:
   silently shifts more of the model onto the CPU and invalidates the timing
 - The same `AGENTS.md` and `TASK.txt`, byte for byte
 
+## What this task shows about delegation itself
+
+Worth knowing before using this task to justify the approach: **it is a task
+you should not delegate.** Done directly it takes 5 tool calls and 571
+characters of generated code. Describing it well enough for a model that
+cannot see your conversation takes 988 characters, so delegating costs
+about 73% more on Claude's side than just doing it.
+
+That isn't an argument against the benchmark, which measures whether a
+model can do real work correctly, and it does that well. It's a reminder
+that model quality and delegation economics are separate questions. A small
+surgical fix is the wrong shape for handing off, however good the model is.
+
 ## Results so far
 
 | model | score | time | notes |
