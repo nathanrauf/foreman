@@ -68,8 +68,30 @@ netstat -ano | findstr 11434
 
 ## Client machine (the laptop)
 
-Point OpenCode's provider at the serving machine. Everything else about
-OpenCode stays the same:
+**Every model must be declared in `opencode.json`.** There is no discovery
+step: OpenCode will not use a tag that isn't in its config, and asking for
+one fails with an opaque `UnknownError` that never mentions the real cause.
+Confirmed by removing a working model from the config and watching it break.
+
+So generate the file rather than hand-writing it, especially on a second
+machine where the model list has to stay in step with a GPU you aren't
+sitting at:
+
+```bash
+python skills/foreman-recommend/scripts/gen_opencode_config.py \
+  --host 192.168.50.100 --default-model qwen3.6:35b-a3b --write ./opencode.json
+```
+
+It reads the live model list from the serving machine and writes the whole
+provider block with sane per-model limits. Re-run it after pulling anything
+new. Without `--write` it prints to stdout so you can look first.
+
+The generated `tool_call: true` on every model is a default, not a finding.
+Ollama doesn't report tool-calling per tag, and a capability claim is not
+evidence: one model in this project's testing advertised function calling and
+scored 0/2. Verify before trusting, as always.
+
+If you'd rather write it by hand, this is the shape:
 
 ```json
 {
@@ -105,6 +127,29 @@ or scoped to the wrong subnet; connection refused means Ollama isn't bound to
 
 Give the serving machine a DHCP reservation on your router. If its address
 moves, every client config silently points at nothing.
+
+## One config that works on both machines
+
+The serving machine can reach Ollama through its own LAN address, not just
+through `localhost`. So if you point *every* machine at the LAN IP, including
+the one hosting the GPU, the config file becomes identical everywhere and you
+can sync it without thinking about which machine you're on. Verified working
+on the serving machine itself, going out to its own address rather than
+looping back:
+
+```json
+"options": { "baseURL": "http://192.168.50.100:11434/v1" }
+```
+
+The trade is worth understanding before you take it. `localhost` cannot break
+and does not depend on the network stack, a DHCP lease, or the firewall rule
+staying in place. A LAN address can break in all of those ways, and then it
+breaks on the serving machine too, which is the one place you'd expect to
+still work. With a DHCP reservation that's a small risk against never
+maintaining two configs.
+
+Pick whichever failure you'd rather debug. If you keep them separate, the
+serving machine uses `localhost` and only clients use the LAN address.
 
 ## What changes about the model choice
 

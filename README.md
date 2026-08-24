@@ -93,7 +93,9 @@ On the machine above (16GB VRAM), the current answer is `qwen3.6:35b-a3b`, with 
 
 Claude Code picks up skills from `~/.claude/skills/` automatically in every project.
 
-**Using a different machine's GPU?** [`docs/remote-access.md`](docs/remote-access.md) covers serving Ollama to your LAN so a laptop can use a desktop's card. Read the security section first: Ollama has no authentication at all, so the firewall rule is the entire boundary, and recent versions bind `0.0.0.0` by default rather than localhost.
+**Using a different machine's GPU?** [`docs/remote-access.md`](docs/remote-access.md) covers serving Ollama to your LAN so a laptop can use a desktop's card, including a single config that works unchanged on both. Read the security section first: Ollama has no authentication at all, so the firewall rule is the entire boundary, and recent versions bind `0.0.0.0` by default rather than localhost.
+
+OpenCode won't use a model that isn't declared in its config, and says so only via an opaque `UnknownError`, so [`gen_opencode_config.py`](skills/foreman-recommend/scripts/gen_opencode_config.py) writes the provider block from a live Ollama instance, local or remote.
 
 ## What broke, and what didn't
 
