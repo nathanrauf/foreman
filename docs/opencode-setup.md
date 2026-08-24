@@ -62,7 +62,7 @@ hard reset.
 Set both before running `ollama serve`:
 
 ```bash
-setx OLLAMA_NUM_PARALLEL 1        # caps concurrent slots — the actual fix
+setx OLLAMA_NUM_PARALLEL 1        # caps concurrent slots, the actual fix
 setx OLLAMA_KV_CACHE_TYPE q8_0    # halves KV cache memory, ~no quality loss
 ```
 
@@ -75,7 +75,7 @@ re-invoking it after a tool error, across every model tried. Add an
 ```markdown
 # Agent Instructions
 
-You MUST accomplish tasks by actually calling the provided tools — never describe,
+You MUST accomplish tasks by actually calling the provided tools; never describe,
 narrate, or print what a tool call would look like as text or JSON. This applies
 especially after a tool call fails: retry by actually invoking the tool again with
 corrected arguments, not by writing out the corrected call as text.

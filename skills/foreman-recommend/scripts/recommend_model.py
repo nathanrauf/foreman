@@ -3,24 +3,24 @@
 
 Two tiers of candidates, both filtered by real VRAM fit:
 
-  KNOWN — hand-curated, each with either a BFCL (Berkeley Function Calling
+  KNOWN: hand-curated, each with either a BFCL (Berkeley Function Calling
   Leaderboard) tool-calling score or actual empirical test results from this
   project (or both). Fast, no network calls beyond BFCL/live speed data.
 
-  DISCOVERED — live-queried from the Hugging Face Hub API (search sorted by
+  DISCOVERED: live-queried from the Hugging Face Hub API (search sorted by
   downloads, and separately by recency, merged) so this doesn't go stale the
   moment a new model ships. Each discovered candidate's exact quantized file
-  size is fetched from HF's tree API — not guessed — to confirm VRAM fit.
+  size is fetched from HF's tree API, not guessed, to confirm VRAM fit.
   Discovered candidates are NOT auto-scored against BFCL (naming is too
-  inconsistent to match reliably — attaching a benchmark score to the wrong
-  model would be worse than no score) and are NOT assumed to work — they are
-  purely "found, and it fits," nothing more.
+  inconsistent to match reliably, and attaching a benchmark score to the
+  wrong model would be worse than no score) and are NOT assumed to work;
+  they are purely "found, and it fits," nothing more.
 
 Stage 2, required for anything from either tier before recommending it for
 real use: empirical verification. Pull it, run the standard tool-calling
 test (with an AGENTS.md telling the model to actually call tools rather than
 narrate them) three times through the harness actually being used, and check
-the file changed correctly each time — do not trust the model's own "done"
+the file changed correctly each time; do not trust the model's own "done"
 message. This has caught real failures that looked fine on paper (KNOWN
 entries below record several). See the skill's SKILL.md for the full
 protocol.
@@ -42,12 +42,12 @@ sys.stdout.reconfigure(encoding="utf-8")
 BFCL_BASE = "https://raw.githubusercontent.com/HuanzhiMao/BFCL-Result/main/2025-12-16/score"
 HF_API = "https://huggingface.co/api/models"
 
-# Reasonable default quant preference order — balances quality vs size; the
-# first one found in a repo's file list that fits the VRAM budget is used.
+# Reasonable default quant preference order, balancing quality against size;
+# the first one found in a repo's file list that fits the VRAM budget is used.
 QUANT_PREFERENCE = ["Q4_K_M", "Q4_K_S", "IQ4_XS", "Q4_0", "Q5_K_M", "Q3_K_M"]
 
 # Search terms used for HF discovery. Biased toward instruction-tuned and
-# coding-oriented models, since that's this skill's actual use case — a
+# coding-oriented models, since that's this skill's actual use case. A
 # generic "GGUF" search surfaces plenty of chat/roleplay models that aren't
 # relevant here. Extend/adjust as the space shifts.
 DISCOVERY_SEARCH_TERMS = ["instruct GGUF", "coder GGUF", "agent GGUF"]
@@ -62,20 +62,20 @@ KNOWN_CANDIDATES = {
     "qwen3:8b": {
         "approx_vram_gb": 8, "bfcl_path": "Qwen_Qwen3-8B-FC", "backend": "ollama",
         "measured_seconds_per_task": 33,
-        "notes": "Dense. Validated 2026-08-23: 3/3 clean tool-calling through OpenCode, 28-39s/task — fastest and most reliable candidate found so far.",
+        "notes": "Dense. Validated 2026-08-23: 3/3 clean tool-calling through OpenCode, 28-39s/task, fastest and most reliable candidate found so far.",
     },
     "qwen3:14b": {
         "approx_vram_gb": 10, "bfcl_path": "qwen3-14b-FC", "backend": "ollama",
-        "notes": "Dense. Lower BFCL multi-turn score than qwen3:8b despite being larger — not yet empirically tested.",
+        "notes": "Dense. Lower BFCL multi-turn score than qwen3:8b despite being larger; not yet empirically tested.",
     },
     "qwen3:32b": {
         "approx_vram_gb": 20, "bfcl_path": "Qwen_Qwen3-32B-FC", "backend": "ollama",
-        "notes": "Dense. Highest BFCL score of the Qwen3 family checked, but needs CPU offload on a 16GB card — not yet empirically tested; offload previously correlated with severe slowdowns under OpenCode.",
+        "notes": "Dense. Highest BFCL score of the Qwen3 family checked, but needs CPU offload on a 16GB card. Not yet empirically tested; offload previously correlated with severe slowdowns under OpenCode.",
     },
     "qwen3-coder:30b": {
         "approx_vram_gb": 19, "bfcl_path": "qwen3-30b-a3b-instruct-2507-FC", "backend": "ollama",
         "measured_seconds_per_task": None,  # timed out (>180s) via OpenCode+Ollama; 190s via OpenCode+llama.cpp+--fit
-        "notes": "MoE ~3.3B active params. BFCL path is the closest available match (base instruct, not the coder fine-tune) — approximate. Validated reliable (3/3) but needs CPU offload on 16GB; times out through OpenCode's heavy prompt over plain Ollama, but works via llama.cpp with --fit (see docs/opencode-setup.md).",
+        "notes": "MoE ~3.3B active params. BFCL path is the closest available match (base instruct, not the coder fine-tune), approximate. Validated reliable (3/3) but needs CPU offload on 16GB; times out through OpenCode's heavy prompt over plain Ollama, but works via llama.cpp with --fit (see docs/opencode-setup.md).",
     },
     "gpt-oss:20b": {
         "approx_vram_gb": 13, "bfcl_path": None, "backend": "ollama",
@@ -85,15 +85,15 @@ KNOWN_CANDIDATES = {
     "Qwen3.6-35B-A3B-UD-Q4_K_M": {
         "approx_vram_gb": 15, "bfcl_path": None, "backend": "llamacpp",
         "measured_seconds_per_task": 49,
-        "notes": "MoE, hybrid attention/recurrent architecture (unsloth GGUF). Not on Ollama's library and not in BFCL (too new as of the Dec 2025 snapshot) — found via a community post, not this shortlister, which is part of why HF-based discovery was added. Empirically validated 2026-08-23: 3/3 through OpenCode+llama.cpp (--fit on --fit-ctx 65536 --fit-target 256 -np 1 -fa on --no-mmap --mlock -b 2048 -ub 2048 -ctk/-ctv q8_0), 43-55s/task. Note --mlock holds ~19GB in physical RAM for as long as the server runs — must be stopped manually when done; unlike Ollama it does not auto-unload on idle.",
+        "notes": "MoE, hybrid attention/recurrent architecture (unsloth GGUF). Not on Ollama's library and not in BFCL (too new as of the Dec 2025 snapshot); found via a community post, not this shortlister, which is part of why HF-based discovery was added. Empirically validated 2026-08-23: 3/3 through OpenCode+llama.cpp (--fit on --fit-ctx 65536 --fit-target 256 -np 1 -fa on --no-mmap --mlock -b 2048 -ub 2048 -ctk/-ctv q8_0), 43-55s/task. Note --mlock holds ~19GB in physical RAM for as long as the server runs; must be stopped manually when done, unlike Ollama it does not auto-unload on idle.",
     },
     "qwen2.5-coder:14b": {
         "approx_vram_gb": 9, "bfcl_path": None, "backend": "ollama",
-        "notes": "REJECTED — no documented tool-calling support (confirmed via its own Hugging Face model card), 0/2 empirical failures through OpenCode.",
+        "notes": "REJECTED: no documented tool-calling support (confirmed via its own Hugging Face model card), 0/2 empirical failures through OpenCode.",
     },
     "qwen2.5:14b-instruct": {
         "approx_vram_gb": 9, "bfcl_path": None, "backend": "ollama",
-        "notes": "REJECTED — inconsistent through OpenCode (1 success, 1 hang with zero output on an identical run); raw API tool calls work fine, so the flakiness is specific to OpenCode's full prompt/schema load.",
+        "notes": "REJECTED: inconsistent through OpenCode (1 success, 1 hang with zero output on an identical run); raw API tool calls work fine, so the flakiness is specific to OpenCode's full prompt/schema load.",
     },
 }
 
@@ -135,7 +135,7 @@ def hf_search(term, sort, limit):
 def hf_best_fitting_quant(model_id, budget_gb):
     """Return (quant_name, size_gb) for the best quant that fits budget_gb,
     or None if nothing in the preference list fits. Uses the tree API for
-    real file sizes — never guesses from parameter count."""
+    real file sizes, never guesses from parameter count."""
     try:
         tree = hf_get(f"{HF_API}/{urllib.parse.quote(model_id)}/tree/main")
     except Exception:
@@ -174,7 +174,7 @@ def discover_candidates(budget_gb, search_terms, per_term_limit):
             "backend": "llamacpp",
             "bfcl_multi_turn_accuracy": None,
             "measured_seconds_per_task": None,
-            "notes": "DISCOVERED via Hugging Face search — fits VRAM budget, NOT yet verified. Do not trust until empirically tested (see SKILL.md stage 2).",
+            "notes": "DISCOVERED via Hugging Face search, fits VRAM budget, NOT yet verified. Do not trust until empirically tested (see SKILL.md stage 2).",
         })
     results.sort(key=lambda r: -r["downloads"])
     return results
@@ -184,7 +184,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--vram-gb", type=float, help="Override detected VRAM (GB)")
     parser.add_argument("--headroom-gb", type=float, default=2.0,
-                         help="VRAM headroom to reserve (default 2GB — this machine crashed once without enough)")
+                         help="VRAM headroom to reserve (default 2GB; this machine crashed once without enough)")
     parser.add_argument("--no-discover", action="store_true", help="Skip live Hugging Face discovery, known candidates only")
     parser.add_argument("--search", action="append", help="Add a custom discovery search term (repeatable)")
     parser.add_argument("--discover-limit", type=int, default=8, help="Max results per search term/sort combination")
@@ -241,7 +241,7 @@ def main():
             discovered = discover_candidates(budget, terms, args.discover_limit)
         except urllib.error.URLError as e:
             discovered = []
-            print(f"(discovery failed — network error: {e})\n")
+            print(f"(discovery failed, network error: {e})\n")
         if not discovered:
             print("(no new fitting candidates found this run)\n")
         for r in discovered[:10]:
@@ -254,7 +254,7 @@ def main():
     print("trustworthy for their tested harness; DISCOVERED entries are untested by")
     print("definition. Always run stage 2 (3x tool-calling test, AGENTS.md fix,")
     print("independently verify the file changed) before recommending a model for")
-    print("real use — see SKILL.md.")
+    print("real use, see SKILL.md.")
 
 
 if __name__ == "__main__":

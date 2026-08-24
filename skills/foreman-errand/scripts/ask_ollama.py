@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Send one self-contained prompt to a local Ollama model and print the reply.
 
-No conversation history is kept — every call is stateless, so the prompt
+No conversation history is kept; every call is stateless, so the prompt
 must contain everything the model needs (the local model cannot see the
 Claude Code conversation this is being called from).
 
@@ -30,7 +30,7 @@ def main():
     parser.add_argument("--file", help="Read the prompt from this file instead of stdin")
     parser.add_argument("--num-ctx", type=int, default=16384)
     parser.add_argument("--max-input-tokens", type=int, default=28000,
-                         help="Refuse rather than silently send oversized input — a local model "
+                         help="Refuse rather than silently send oversized input; a local model "
                               "given a prompt beyond its context window doesn't error, it just "
                               "produces a confused/generic response with no indication anything "
                               "went wrong. Raise this (and --num-ctx, VRAM permitting) if a "
@@ -55,7 +55,7 @@ def main():
             f"error: prompt is ~{estimated_tokens} estimated tokens, over the "
             f"{args.max_input_tokens}-token safety cap. Sending this as-is would silently "
             f"overflow the context window (currently num_ctx={args.num_ctx}) and produce a "
-            f"confused/generic reply with no error — pre-filter the content first (e.g. grep "
+            f"confused/generic reply with no error. Pre-filter the content first (e.g. grep "
             f"for the relevant lines before summarizing) rather than raising the cap as a first "
             f"resort.",
             file=sys.stderr,
@@ -99,7 +99,7 @@ def main():
         print(
             "error: model returned empty content. This happens when the input is close enough "
             "to the context limit that the model spends its whole response budget on internal "
-            "reasoning and never emits a final answer — not a crash, just silent non-output. "
+            "reasoning and never emits a final answer, not a crash, just silent non-output. "
             "Try again with a larger --num-ctx, a shorter prompt, or --effort low if not already "
             "set.",
             file=sys.stderr,
