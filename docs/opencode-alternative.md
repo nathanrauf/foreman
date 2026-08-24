@@ -50,7 +50,7 @@ works natively via `npm i -g opencode-ai`.
 Without this file, OpenCode has no Ollama provider configured and fails with an opaque
 `UnknownError` rather than a clear message — if you hit that, check this file exists.
 
-3. Run: `opencode run "your task" -m ollama/qwen3-coder:30b --dir /path/to/project`
+3. Run: `opencode run "your task" -m ollama/gpt-oss:20b --dir /path/to/project`
 
 ### Required: two Ollama settings, or you can crash your machine
 
@@ -94,7 +94,31 @@ each independently verified by checking the file, not by trusting the model's ow
 
 ### Model notes
 
-`qwen3-coder:30b` is the more capable of the two for coding tasks — OpenCode's own
-docs also point at Qwen-Coder/DeepSeek-Coder variants when tool-calling underperforms.
-`gpt-oss:20b` is lighter (fits fully in 16GB VRAM, no offload) and was more consistent
-without the AGENTS.md fix, so it's the safer default if you haven't set that up yet.
+**`gpt-oss:20b` is the recommended default for OpenCode specifically** — not because
+it's the more capable model, but because it's the only one of the two that's actually
+fast enough through this harness. Timed head-to-head on an identical trivial task
+(add one function to a file): `gpt-oss:20b` completed correctly in 110 seconds;
+`qwen3-coder:30b` produced zero output and hadn't finished after 180 seconds.
+
+This is a harness-weight problem, not a verdict on the model. `qwen3-coder:30b` splits
+~35% CPU / 65% GPU on a 16GB card at OpenCode's default 65536-token context, and
+CPU-offloaded inference is much slower per token. OpenCode's system prompt and full
+tool schema are large enough that this penalty compounds badly. In this repo's own
+leaner `ollama-agent-head` skill — a much smaller system prompt, fewer tools — the
+same model completed multi-step tasks in 15–60 seconds and was *more* efficient than
+`gpt-oss:20b`. Match the model to the harness: `qwen3-coder:30b` for the lean custom
+skill, `gpt-oss:20b` for OpenCode.
+
+**Rejected: the Qwen2.5 generation**, for tool-calling through this stack specifically:
+
+- `qwen2.5-coder:14b` — 0/2 on tool-calling, confirmed via its own Hugging Face model
+  card, which doesn't mention tool/function calling at all. (A "Qwen2.5-Coder supports
+  function calling" claim exists, but it's describing Alibaba's *hosted* Model Studio
+  API adding tool-calling as a platform-level feature independent of the underlying
+  model's training — it doesn't apply to the raw open weights run through Ollama.)
+- `qwen2.5:14b-instruct` — genuinely inconsistent: one run completed correctly with
+  legitimate tool calls and sensible self-correction after a failed edit; an otherwise
+  identical run hung with zero output for 90+ seconds. A raw API call with a minimal
+  tool set worked instantly, so the model can format tool calls correctly — the
+  inconsistency shows up specifically under OpenCode's full prompt and tool-schema
+  load. Not recommended until that's better understood.
