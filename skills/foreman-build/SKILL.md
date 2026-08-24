@@ -1,15 +1,37 @@
 ---
 name: foreman-build
-description: This skill should be used when the user wants a multi-step coding or research task done by a local model instead of Claude directly, such as "do this with the local model", "run this on OpenCode", "let the local model handle this", or any task that needs file edits, running commands, or several tool-calling turns and should save Claude usage rather than spend it. Not for single quick calls (use foreman-errand) or for figuring out which model to use (use foreman-recommend first if that isn't already known).
+description: This skill should be used when the user explicitly wants a multi-step coding task run on a local model rather than by Claude, such as "do this with the local model", "run this on OpenCode", "keep this off the cloud", or when Claude usage limits, privacy, or a long unattended run are the reason for moving work off Claude. Do NOT reach for this to save credits: measured on this project it costs slightly MORE Claude tokens than doing the task directly, because Claude token cost is dominated by context and orchestration rather than generation. Not for single quick calls (use foreman-errand) or for choosing a model (use foreman-recommend).
 ---
 
 # Foreman Build
 
 Run a real multi-step task through [OpenCode](https://opencode.ai) against a
-local model, with Claude launching and reviewing rather than driving every
-turn itself. This is the actual point of the whole project: Claude's usage
-goes toward judgment (writing the task, verifying the result), not toward
-the mechanical work in between.
+local model, with Claude writing the task and verifying the result rather
+than driving every turn itself.
+
+**Know what this does and doesn't buy before using it.** Measured on this
+project, delegating costs slightly *more* Claude tokens than doing the task
+directly, at every task size tested: 31,190 against 30,050 on a small fix,
+35,982 against 34,461 on a three-file module. Claude's token cost is
+dominated by context, system prompt, tool definitions and reading, not by
+generation, so moving the generation elsewhere saves little and the
+orchestration adds overhead. It is also roughly three times slower in wall
+clock.
+
+What it does buy: work that doesn't consume Claude usage limits, code that
+never leaves the machine, and long unattended runs where a local model
+grinds for twenty minutes and Claude reads one paragraph at the end. Reach
+for it when one of those is the actual goal. If the user just wants to
+spend less, tell them plainly that switching Claude Code to a cheaper model
+will do more, and don't delegate.
+
+**Run the loop on the cheapest model that can do it.** Writing a task file,
+launching, and checking a diff is mechanical. The measurements above were
+produced by Haiku doing exactly that, and it lost nothing in quality
+against a more expensive model. If this project's `agents/foreman-runner.md`
+is installed, hand the execution to that subagent: it is pinned to Haiku,
+its intermediate work stays out of the caller's context, and only its
+verdict comes back.
 
 Full setup, safety settings, and model notes live in this project's
 `docs/opencode-setup.md` (in the `foreman` repo this skill ships with).

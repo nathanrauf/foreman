@@ -1,6 +1,6 @@
 ---
 name: foreman-errand
-description: This skill should be used when the user asks to "delegate to ollama", "use the local model", "offload this to save credits", "summarize this locally", or before performing token-heavy, low-reasoning-density work such as summarizing large files or logs, generating boilerplate/docstrings, or drafting a first-pass commit message. Situations where spending Claude usage is wasteful because a local model on the user's own GPU can do it well enough.
+description: This skill should be used when the user asks to "delegate to ollama", "use the local model", "summarize this locally", or "keep this off the cloud", or for token-heavy low-reasoning work such as summarizing a large log, generating boilerplate, or drafting a first-pass commit message, when the reason is a Claude usage limit, privacy, or keeping a large input out of the conversation. It does not reliably reduce Claude token cost; treat it as a way to move work off Claude, not to make it cheaper.
 ---
 
 # Foreman Errand

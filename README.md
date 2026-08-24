@@ -1,28 +1,60 @@
 # foreman
 
-Claude picks and verifies the local model. A local model does the actual work. Your Claude usage goes toward judgment, not tokens.
+Run coding tasks on a local model, with verification strict enough to trust the result. Claude picks the model and checks the work.
 
-Everything here was tested on a real machine (RTX 5070 Ti, 16GB VRAM, Windows 11), including the parts that broke. The findings section covers the failures too, since most of them cost real debugging time and weren't obvious in advance.
+Everything here was tested on a real machine (RTX 5070 Ti, 16GB VRAM, Windows 11), including the parts that broke, and including the part where the project's original premise failed.
 
-## How much this actually saves
+## Read this before anything else: it does not save Claude credits
 
-Measured, not guessed. Each task was done twice: once with Claude doing the work directly, once with Claude only writing the task, launching, and reviewing while a local model did it. What's counted is Claude's own effort, since that's what you pay for: tool calls made, and characters generated.
+This started out as a credit-saving tool. The pitch was that a local model does the generation, so Claude spends fewer tokens. Measured properly, that is false, and the section below has the numbers.
 
-| Task | Claude alone | With foreman | Claude-side saving |
+What it is actually good for is narrower and has nothing to do with cost per token:
+
+- **Rate limits.** Local compute doesn't touch your Claude usage quota. If you're hitting caps rather than watching a bill, moving work off Claude is real relief even though it isn't cheaper.
+- **Privacy and offline work.** The code never leaves the machine.
+- **Long unattended runs.** A local model can grind for twenty minutes while Claude reads a one-paragraph verdict at the end.
+
+If none of those apply to you, the honest recommendation is to skip the delegation part entirely and just run Claude Code on a cheaper model. `/model haiku` will do more for your usage than this project will.
+
+The parts of this repo that survive that verdict intact: the model shortlister, the benchmark, and the verification doctrine. Those are useful regardless of who does the generating.
+
+## The measurement that killed the original pitch
+
+Same task, same machine, same grader, run two ways: a cheap Claude model doing the work itself, versus that same model orchestrating a local model and verifying the result.
+
+**A four-line bug fix, plus tests and a changelog:**
+
+| | Claude tokens | Wall clock | Quality |
 |---|---|---|---|
-| Fix a bug in existing code (a 4-line change, plus tests and a changelog) | 5 calls, 571 chars | 3 calls, 988 chars | **73% worse** |
-| Extend a module: 2 functions, validation, tests | 6 calls, ~1,874 chars | 3 calls, 721 chars | **62% saved** |
-| Build a module from scratch: 8 functions, JSON persistence, validation, a real test suite, docs | 4 calls, 7,042 chars | 3 calls, 2,205 chars | **69% saved** |
+| Haiku does it itself | **30,050** | **39s** | 15/15 |
+| Haiku delegates to a local model | 31,190 | 103s | 15/15 |
 
-The first row is the one worth dwelling on, because it goes the wrong way. Describing a small surgical fix precisely enough for a model that cannot see your conversation took 988 characters; making the fix took 571. Delegating cost nearly twice as much as doing it. That isn't a measurement error, it's the actual shape of the trade: the task description is a fixed overhead that doesn't shrink just because the job is small.
+**An eight-function module with a test suite and docs:**
 
-Which sets the rule this whole project runs on. **Delegation pays when the output is large relative to its description.** Writing a module from scratch is eight functions of code from a couple of paragraphs of spec, so it saves ~69%. A four-line bug fix is the inverse and loses. Claude's side of the delegated path stays flat at 3 tool calls no matter the task size (write the task, launch, verify), so everything depends on how much generation you're handing off. There's no in-conversation way to check real dollar cost, only Claude Code's own `/cost` for that.
+| | Claude tokens | Wall clock | Quality |
+|---|---|---|---|
+| Haiku does it itself | **34,461** | **76s** | 46 tests, 5.4KB README |
+| Haiku delegates to a local model | 35,982 | 237s | 28 tests, 1.6KB README |
 
-It isn't free money even in the winning rows. On the module task, the model got the code right and verified, then silently shorted the README it was told to write. On the bug-fix task one model deleted a passing test and another did nothing at all while exiting cleanly. Catching any of that costs a review cycle, sometimes a full redo, which erases that run's saving. The honest pitch: savings scale with task size when the model is up to the job, and `foreman-recommend` exists to make that less of a guess.
+Delegating lost both times: more Claude tokens, roughly three times slower, and a thinner result on the larger task.
+
+The reason is worth understanding, because it generalises past this project. Look at what Haiku costs to do the work itself as the task grows: **30,050 tokens for a four-line fix, 34,461 for a three-file module.** Twelve times the output, fifteen percent more cost.
+
+**Claude's token bill is dominated by context, system prompt, tool definitions, and reading, not by generation.** Foreman offloads generation, which is a small slice of the total, and adds orchestration overhead on top of it. There is no task size in that range where the trade comes out ahead.
+
+Caveats, since two data points on one machine is not a law: the ~30K floor includes fixed subagent startup that a long session would amortise differently, and the marginal cost of the twentieth task isn't the first. But the mechanism is clear enough that the burden of proof sits with the optimistic reading, and the earlier version of this README quoted only the flattering rows because it never ran the control.
+
+## Why the earlier numbers looked better
+
+An earlier version of this README ran a different comparison and reported savings of 62-69%. It counted *characters Claude generated* and compared Claude writing code directly against Claude writing a task description instead.
+
+That comparison was wrong in two ways, and both flattered the result. Characters are not tokens, and they ignore the reading, tool overhead and context that dominate the real bill. More importantly it never ran the control above: a cheap model simply doing the task itself. Once that control exists, the delegated path loses outright, and the earlier framing turns out to have been measuring the wrong quantity against the wrong baseline.
+
+The one useful thing it did surface: describing a small task precisely enough for a model that cannot see your conversation costs more than doing the task. A four-line fix needed a 988-character spec to hand off and 571 characters to just make. That overhead is fixed per delegation and doesn't shrink with the job, which is a good reason not to delegate small work even setting the token measurements aside.
 
 ## Why involve Claude at all
 
-A fair question, since [OpenCode](https://opencode.ai) can already run an autonomous coding loop against a local model with zero Claude involvement. Three things Claude adds that a local model doesn't do well on its own:
+A fair question, and a sharper one now the cost argument is gone, since [OpenCode](https://opencode.ai) can already run an autonomous coding loop against a local model with zero Claude involvement. Three things Claude adds that a local model doesn't do well on its own:
 
 **Figuring out what to run.** OpenCode has no opinion on which model fits your hardware or your task. Checking model cards for undocumented tool-calling gaps, cross-referencing benchmark data, and searching Hugging Face for current options is investigative work a human would otherwise do by hand. OpenCode executes; it doesn't research.
 
@@ -30,7 +62,9 @@ A fair question, since [OpenCode](https://opencode.ai) can already run an autono
 
 **Judgment at the edges.** Local models are good at mechanical execution and weaker at knowing whether the approach they picked is actually the right one: the kind of moment where a human reviewing the work says "hold on, that's not the way to do this, try X instead."
 
-Where this gets thin, honestly: for something small and well-specified (summarize this log, fix this one-line bug), the value of Claude reviewing beyond "kick it off and check the result" is real but small. The savings table above puts a number on it, and on a small enough task delegation is simply the wrong call. The value concentrates on tasks big enough that the generation dwarfs the description, and on ones where correctness matters enough to be worth verifying.
+Where this gets thin, honestly: none of those three arguments is about saving money, and the measurements above say they don't. They're arguments for Claude being the thing that decides and checks, whoever does the typing. For something small and well-specified, the value of Claude reviewing beyond "kick it off and check the result" is real but small, and delegating it at all is the wrong call.
+
+There's also a cheaper answer to this question than the one this project was built around. Most of the reviewing and launching is mechanical, and a cheap model does it about as well: the numbers above were produced by Haiku orchestrating, not Opus. If you are running this, run it on the cheapest model that can write a clear task and read a diff, and escalate only when something breaks in a way that needs diagnosing.
 
 ## What's here
 
@@ -40,14 +74,17 @@ Three Claude Code skills, meant to be copied into `~/.claude/skills/`:
 - **[`foreman-errand`](skills/foreman-errand/)**: a single stateless call to a local model for token-heavy, low-reasoning work, like summarizing a large log before reading it, drafting boilerplate, or a first-pass commit message. No agent loop, no dependencies beyond Python's standard library. For tasks that don't need tool use at all, this is lighter than spinning up a full coding agent.
 - **[`foreman-build`](skills/foreman-build/)**: runs a real multi-step task through [OpenCode](https://opencode.ai) against a local model, with Claude launching and reviewing rather than driving every turn itself. Not wrapped in more custom tooling beyond that, since OpenCode is already good at this and maintaining a parallel implementation isn't worth it. Points to `docs/opencode-setup.md` for the full setup and the two Ollama settings that prevent a real crash this project hit.
 
-Plus one benchmark:
+Plus a subagent and a benchmark:
+
+- **[`agents/foreman-runner`](agents/foreman-runner.md)**: copy into `~/.claude/agents/`. Runs one already-decided delegation end to end (write the task file, launch, verify, report a verdict) and is pinned to Haiku, because that work is mechanical and the expensive model should not be paying for it. Its intermediate work stays in its own context; only the verdict reaches the caller. Claude Code reads `agents/` at session start, so it appears next session, not immediately.
+
 
 - **[`benchmarks/pricing-bugfix`](benchmarks/pricing-bugfix/)**: the shared task every model in the known list is timed and scored on, with the grader that scores it. A bug in existing code rather than a blank file, where the fix has to be minimal, regression tests added, existing tests kept, and a changelog updated. Fifteen objective checks, run against the files rather than against what the model claimed. Having *one fixed* task matters more than the task being clever: the same model measured 666s on a greenfield task and 242s on this one, so timings from different tasks say nothing when compared.
 
 ## Setup
 
 1. Install [Ollama](https://ollama.com).
-2. Copy all three `skills/*/` folders into `~/.claude/skills/`. Plain Python, standard library only, no build step.
+2. Copy all three `skills/*/` folders into `~/.claude/skills/`, and `agents/foreman-runner.md` into `~/.claude/agents/`. Plain Python, standard library only, no build step.
 3. Ask Claude to run `foreman-recommend` to get a model shortlisted and verified for your actual hardware, rather than assuming this repo's defaults are right for your GPU.
 4. Follow [`docs/opencode-setup.md`](docs/opencode-setup.md) to install OpenCode and set the two Ollama settings. These are genuinely required, not optional; see the crash note below.
 5. `foreman-errand` and `foreman-recommend` need no further setup beyond that; both are pure Python.
