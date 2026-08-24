@@ -255,6 +255,75 @@ models when the harness changes. And a trivial-task pass predicts nothing
 about real work: this model went from a clean 2/2 read-and-edit to
 producing literally zero output on a task one step harder.
 
+## The harness itself costs time: OpenCode vs Pi
+
+The agent harness is not a neutral wrapper around the model. It decides how
+many tokens the model must read before it can start working, and on a model
+doing CPU offload that prefill is expensive.
+
+[Pi](https://github.com/earendil-works/pi) is a CLI coding agent with a
+deliberately small four-tool core (read, write, edit, bash) against
+OpenCode's heavier system prompt and larger tool schema. Same task, same
+model (`qwen3.6:35b-a3b`), same `AGENTS.md`, model unloaded before every run,
+three runs each, graded by the same 15 checks:
+
+| | run 1 | run 2 | run 3 | mean | score |
+|---|---|---|---|---|---|
+| Pi | 52s | 54s | 52s | **52.7s** | 3/3 at 15/15 |
+| OpenCode | 74s | 74s | 83s | 77.0s | 3/3 at 15/15 |
+
+**Pi is about 32% faster for identical output**, consistently enough that the
+variance doesn't threaten the conclusion. Neither harness lost quality; both
+produced a minimal fix, kept every existing test, added regression tests and
+updated the changelog on all three runs.
+
+This is the same effect that made `qwen3-coder:30b` look broken. It timed out
+entirely under OpenCode while working under a lighter loop, which was
+recorded here as a model problem when it was really a prompt-weight problem.
+A smaller harness prompt is worth real time on any model that spills onto the
+CPU.
+
+What it costs you: Pi needs Node 18+, while OpenCode ships as a standalone
+binary with no runtime dependency at all. On a machine still running an old
+Node, that's a system-wide upgrade before you can even try it.
+
+Pi points at Ollama through `~/.pi/agent/models.json`:
+
+```json
+{
+  "providers": {
+    "ollama": {
+      "baseUrl": "http://localhost:11434/v1",
+      "api": "openai-completions",
+      "apiKey": "ollama",
+      "compat": {
+        "supportsDeveloperRole": false,
+        "supportsReasoningEffort": false
+      },
+      "models": [
+        { "id": "qwen3.6:35b-a3b", "reasoning": true }
+      ]
+    }
+  }
+}
+```
+
+The `apiKey` is a placeholder Ollama ignores, but Pi hides models with no
+credential, so it has to be present. The `compat` block matters: some
+OpenAI-compatible servers reject the `developer` role and `reasoning_effort`
+that Pi sends to reasoning-capable models.
+
+Run it non-interactively the same way, attaching the task rather than
+inlining it:
+
+```bash
+pi -p --provider ollama --model qwen3.6:35b-a3b -a -- @task.txt "Follow the attached task description."
+```
+
+Worth measuring on your own hardware before switching. This is one task, one
+model, one machine, and the gap comes from prefill, so it should shrink on a
+model that fits entirely in VRAM and grow on one that offloads harder.
+
 ## Does the runtime cause tool-calling failures?
 
 Sometimes, and not in the direction the common advice suggests. There's

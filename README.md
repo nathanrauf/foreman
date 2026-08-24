@@ -136,6 +136,15 @@ Three things came out of that. **The recommender's own top pick was mislabelled*
 
 None of the three failures announced itself. Every one required checking the actual files.
 
+**The harness costs more time than the model choice does, sometimes.** OpenCode is not a neutral wrapper: its system prompt and tool schema are tokens the model must read before starting, and on a model doing CPU offload that prefill is expensive. Measured against [Pi](https://github.com/earendil-works/pi), a CLI agent with a four-tool core, on the same task, same model, three runs each:
+
+| | mean | score |
+|---|---|---|
+| Pi | **52.7s** | 3/3 at 15/15 |
+| OpenCode | 77.0s | 3/3 at 15/15 |
+
+About 32% faster for identical output. This is the same effect that made `qwen3-coder:30b` look broken: it timed out entirely under OpenCode and ran fine under a lighter loop, and was written up here as a model problem when it was a prompt-weight problem. The cost is a runtime dependency, since Pi needs Node 18+ while OpenCode ships as a standalone binary.
+
 **Is the runtime the problem? Sometimes, and not in the direction you'd guess.** Community advice around local tool-calling failures is often "ditch Ollama, use llama.cpp, it's a chat-template issue." This project had real evidence for that: `qwen3-coder:30b` timed out completely under Ollama and ran fine under llama.cpp. So we tested it properly, same model, same Q4_K_M quant, same task, same `AGENTS.md`, one clean GPU:
 
 | `devstral:24b` | Ollama | llama.cpp |
