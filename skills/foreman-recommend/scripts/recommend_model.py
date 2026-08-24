@@ -31,6 +31,7 @@ Usage:
 """
 import argparse
 import json
+import re
 import subprocess
 import sys
 import urllib.error
@@ -41,6 +42,17 @@ sys.stdout.reconfigure(encoding="utf-8")
 
 BFCL_BASE = "https://raw.githubusercontent.com/HuanzhiMao/BFCL-Result/main/2025-12-16/score"
 HF_API = "https://huggingface.co/api/models"
+OLLAMA_LIBRARY = "https://ollama.com/library"
+OLLAMA_REGISTRY = "https://registry.ollama.ai/v2/library"
+
+# Ollama tags to try per model size, best quality first. Ollama's default tag
+# for a size is usually Q4_K_M already; the explicit ones are tried first so
+# the size lookup is unambiguous.
+OLLAMA_TAG_SUFFIXES = ["-q4_K_M", ""]
+
+# Don't bother pulling manifests for models far too large for any consumer
+# card; keeps the number of registry round-trips sane.
+OLLAMA_MAX_PARAMS_B = 40
 
 # Reasonable default quant preference order, balancing quality against size;
 # the first one found in a repo's file list that fits the VRAM budget is used.
@@ -174,6 +186,94 @@ def hf_best_fitting_quant(model_id, budget_gb):
     return None
 
 
+def _parse_ollama_library(html):
+    """Yield (name, capabilities, size_labels) per model on Ollama's library
+    page. Capabilities are Ollama's own metadata, so filtering on "tools" is
+    the platform's claim about tool-calling, not a guess from the name."""
+    for block in re.split(r"<li ", html)[1:]:
+        m = re.search(r'href="/library/([a-z0-9._-]+)"', block)
+        if not m:
+            continue
+        caps = re.findall(r"bg-indigo-50[^>]*>\s*([a-z]+)\s*<", block)
+        sizes = re.findall(r"bg-\[#ddf4ff\][^>]*>\s*([0-9.]+[bmx]?)\s*<", block, re.I)
+        yield m.group(1), caps, sizes
+
+
+def ollama_tag_size_gb(model, size_label):
+    """Total download size for an Ollama tag, from the registry manifest.
+    Real layer sizes, not an estimate from parameter count."""
+    for suffix in OLLAMA_TAG_SUFFIXES:
+        tag = f"{size_label}{suffix}"
+        try:
+            data = hf_get(f"{OLLAMA_REGISTRY}/{model}/manifests/{tag}")
+        except Exception:
+            continue
+        layers = data.get("layers")
+        if layers:
+            return tag, sum(layer.get("size", 0) for layer in layers) / 1e9
+    return None
+
+
+def discover_ollama_candidates(budget_gb, limit):
+    """Models in Ollama's own library that declare tool-calling support and
+    fit the VRAM budget.
+
+    This tier exists because the Hugging Face search below cannot see them:
+    it filters on GGUF repos, and Ollama-native models (gpt-oss, qwen3.6,
+    devstral) either aren't published as GGUF or don't match the search
+    terms. Both models this project actually settled on were invisible to
+    discovery until this was added, which is exactly the blind spot that
+    made a hand-curated KNOWN list feel necessary.
+    """
+    try:
+        html = urllib.request.urlopen(
+            urllib.request.Request(OLLAMA_LIBRARY, headers={"User-Agent": "foreman-recommend/1.0"}),
+            timeout=25,
+        ).read().decode("utf-8", "replace")
+    except Exception:
+        return []
+
+    results = []
+    for name, caps, sizes in _parse_ollama_library(html):
+        if "tools" not in caps:
+            continue
+        # Largest variant that still fits is the best use of the budget, so
+        # try sizes big-to-small and keep only the first hit per family. One
+        # row per model beats five rows of the same model at five sizes.
+        parsed = []
+        for size_label in sizes:
+            try:
+                params_b = float(re.sub(r"[^0-9.]", "", size_label) or 0)
+            except ValueError:
+                continue
+            if params_b and params_b <= OLLAMA_MAX_PARAMS_B:
+                parsed.append((params_b, size_label))
+        for params_b, size_label in sorted(parsed, reverse=True):
+            found = ollama_tag_size_gb(name, size_label)
+            if not found:
+                continue
+            tag, size_gb = found
+            if size_gb > budget_gb:
+                continue
+            results.append({
+                "tag": f"{name}:{tag}",
+                "params_b": params_b,
+                "approx_vram_gb": round(size_gb, 1),
+                "capabilities": caps,
+                "backend": "ollama",
+                "bfcl_multi_turn_accuracy": None,
+                "measured_seconds_per_task": None,
+                "notes": "DISCOVERED in Ollama's library, declares tool-calling support and fits VRAM budget. NOT yet verified; Ollama's 'tools' tag is a capability claim, not evidence it works through a real harness (qwen2.5-coder claimed function calling and scored 0/2 here). Run stage 2 before trusting it.",
+            })
+            break
+
+    # Rank by parameter count that still fits. A crude proxy for capability,
+    # and explicitly not a quality claim, but it beats Ollama's page order,
+    # which is popularity and buries current models under 2024 ones.
+    results.sort(key=lambda r: -r["params_b"])
+    return results[:limit]
+
+
 def discover_candidates(budget_gb, search_terms, per_term_limit):
     """Live HF search, merged across terms and sort orders, deduped, filtered
     to models with a quant that actually fits budget_gb."""
@@ -278,6 +378,20 @@ def main():
             print(f"   a faster model with a worse verification record sorts below it)\n")
 
     if not args.no_discover:
+        print("=== DISCOVERED (Ollama library, declares tool-calling support) ===\n")
+        try:
+            ollama_found = discover_ollama_candidates(budget, args.discover_limit)
+        except urllib.error.URLError as e:
+            ollama_found = []
+            print(f"(Ollama library discovery failed, network error: {e})\n")
+        if not ollama_found:
+            print("(no fitting tool-calling models found in Ollama's library)\n")
+        for r in ollama_found:
+            print(f"- {r['tag']}  [{r['backend']}]")
+            print(f"    VRAM: ~{r['approx_vram_gb']}GB   capabilities: {', '.join(r['capabilities'])}")
+            print(f"    {r['notes']}")
+            print()
+
         terms = args.search if args.search else DISCOVERY_SEARCH_TERMS
         print(f"=== DISCOVERED (live Hugging Face search: {', '.join(terms)}) ===\n")
         try:
