@@ -54,6 +54,15 @@ OLLAMA_TAG_SUFFIXES = ["-q4_K_M", ""]
 # card; keeps the number of registry round-trips sane.
 OLLAMA_MAX_PARAMS_B = 40
 
+# How far past the VRAM budget a candidate may go and still be worth listing,
+# flagged as needing CPU offload. Excluding these outright was wrong: the
+# best-verified model this project has needs offload (a 22GB model on a 16GB
+# card) and was therefore invisible to discovery while simultaneously being
+# ranked first in the known list. Offload is a real cost, not a disqualifier,
+# and it's a cost that grows with context length rather than being fixed, so
+# the listing says so instead of hiding the candidate.
+OFFLOAD_BUDGET_MULTIPLIER = 1.5
+
 # Reasonable default quant preference order, balancing quality against size;
 # the first one found in a repo's file list that fits the VRAM budget is used.
 QUANT_PREFERENCE = ["Q4_K_M", "Q4_K_S", "IQ4_XS", "Q4_0", "Q5_K_M", "Q3_K_M"]
@@ -248,30 +257,52 @@ def discover_ollama_candidates(budget_gb, limit):
                 continue
             if params_b and params_b <= OLLAMA_MAX_PARAMS_B:
                 parsed.append((params_b, size_label))
+        offload_ceiling = budget_gb * OFFLOAD_BUDGET_MULTIPLIER
         for params_b, size_label in sorted(parsed, reverse=True):
             found = ollama_tag_size_gb(name, size_label)
             if not found:
                 continue
             tag, size_gb = found
-            if size_gb > budget_gb:
+            if size_gb > offload_ceiling:
                 continue
+            fits = size_gb <= budget_gb
+            note = "DISCOVERED in Ollama's library, declares tool-calling support. NOT yet verified; Ollama's 'tools' tag is a capability claim, not evidence it works through a real harness (qwen2.5-coder claimed function calling and scored 0/2 here). Run stage 2 before trusting it."
+            if not fits:
+                note += f" Exceeds the VRAM budget by ~{size_gb - budget_gb:.1f}GB, so part of it runs on CPU: expect a speed penalty that gets worse as context grows, not a fixed one."
             results.append({
                 "tag": f"{name}:{tag}",
                 "params_b": params_b,
                 "approx_vram_gb": round(size_gb, 1),
+                "fits_without_offload": fits,
                 "capabilities": caps,
                 "backend": "ollama",
                 "bfcl_multi_turn_accuracy": None,
                 "measured_seconds_per_task": None,
-                "notes": "DISCOVERED in Ollama's library, declares tool-calling support and fits VRAM budget. NOT yet verified; Ollama's 'tools' tag is a capability claim, not evidence it works through a real harness (qwen2.5-coder claimed function calling and scored 0/2 here). Run stage 2 before trusting it.",
+                "notes": note,
             })
             break
 
-    # Rank by parameter count that still fits. A crude proxy for capability,
+    # Report the two categories separately rather than ranking them against
+    # each other. Either single ordering fails: fitting-models-first fills the
+    # list with small models and truncates the large ones away, while pure
+    # parameter-count-first fills it with 32B models needing heavy offload and
+    # truncates away the practical ones. Both failure modes were observed.
+    # Splitting the budget guarantees each category is represented, and lets
+    # the caller weigh "fits entirely" against "bigger but partly on CPU"
+    # themselves, which is the actual trade-off and not one a sort can settle.
+    #
+    # Parameter count orders within each bucket. It's a crude capability proxy
     # and explicitly not a quality claim, but it beats Ollama's page order,
     # which is popularity and buries current models under 2024 ones.
-    results.sort(key=lambda r: -r["params_b"])
-    return results[:limit]
+    # Within "fits", bigger is the better use of the budget. Within "needs
+    # offload", the opposite: rank by how little it overflows, because the
+    # penalty scales with how much sits on the CPU. Sorting that bucket by
+    # parameter count instead just surfaces 32B models that overflow hardest,
+    # and ranks a 2024 35B above a current 27B on size alone.
+    fitting = sorted((r for r in results if r["fits_without_offload"]), key=lambda r: -r["params_b"])
+    offload = sorted((r for r in results if not r["fits_without_offload"]), key=lambda r: r["approx_vram_gb"])
+    half = max(1, limit // 2)
+    return fitting[:half] + offload[: limit - len(fitting[:half])]
 
 
 def discover_candidates(budget_gb, search_terms, per_term_limit):
@@ -387,8 +418,9 @@ def main():
         if not ollama_found:
             print("(no fitting tool-calling models found in Ollama's library)\n")
         for r in ollama_found:
+            fit_str = "fits, no offload" if r["fits_without_offload"] else "NEEDS CPU OFFLOAD"
             print(f"- {r['tag']}  [{r['backend']}]")
-            print(f"    VRAM: ~{r['approx_vram_gb']}GB   capabilities: {', '.join(r['capabilities'])}")
+            print(f"    VRAM: ~{r['approx_vram_gb']}GB ({fit_str})   capabilities: {', '.join(r['capabilities'])}")
             print(f"    {r['notes']}")
             print()
 
