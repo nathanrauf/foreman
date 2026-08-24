@@ -158,23 +158,39 @@ actually fails.
 
 ## Model notes
 
-**`qwen3:8b` is the current default.** 5.2GB download, ~8GB VRAM, no CPU
-offload. Found via BFCL (Berkeley Function Calling Leaderboard) multi-turn
-tool-calling data, where it scored *higher* than 14B and 30B models from the
-same family, non-monotonic with size. Confirmed 3/3 on trivial single-file
-read-and-edit tasks through OpenCode, 28-39 seconds per task, the fastest
-and most reliable model found in this project's testing at that task size.
+Ranked by how far each model has actually been verified, not by speed. That
+ordering is deliberate and was corrected after the fact: a fast model that
+silently produces broken output costs more than a slow one that works,
+because catching it burns a review cycle and every failure this project hit
+was silent. `foreman-recommend` sorts on the same principle.
 
-On a moderately harder task (edit an existing file to add a function, write
-a real test suite, add input validation), it failed differently and worse:
-it abandoned the actual file edit after three failed attempts, then wrote a
-test file for an invented class that doesn't exist anywhere, with a syntax
-error, and reported no problem. Treat "3/3" as validated for simple tasks
-specifically, not as a general reliability guarantee. Always independently
-verify regardless of how the task went.
+**`Qwen3.6-35B-A3B` is the quality pick.** 22GB GGUF, ~15GB VRAM with
+`--fit on`, run through llama.cpp rather than Ollama (it isn't in Ollama's
+library). It's the only model here validated at moderate complexity on two
+separate tasks: it passed one where a faster model failed outright (even
+excluding `bool` from an `isinstance(x, int)` check to dodge a subtle
+Python gotcha), and on an 8-function module task it delivered all three
+requirements correctly, 28 tests passing plus a README that actually
+documented every function, where `gpt-oss:20b` silently shorted the docs.
 
-**`gpt-oss:20b`.** 13GB, fits fully in 16GB VRAM, reliable, ~110s/task.
-Solid fallback if `qwen3:8b` doesn't suit a specific task.
+Its speed is task-dependent in a way the trivial-task number hides: 43-55s
+on trivial tasks, but **412s on that module task**. It's a 22GB model on a
+16GB card, so ~7GB lives on the CPU, and the offload penalty compounds as
+context grows (measured 32 tokens/s decaying to ~4 tokens/s inside a single
+run). Setup is heavier too: see the llama.cpp section below, and note
+`--mlock` holds ~19GB of RAM until the server is stopped manually.
+
+**`gpt-oss:20b` is the default, and the right one for routine work.** 13GB,
+fits *entirely* in 16GB VRAM with no CPU offload, plain `ollama pull`, no
+manual server to start or remember to stop. ~110s/task, and unlike the
+above it doesn't degrade as context grows.
+
+It's the configured default in `opencode.json` deliberately. A default is
+what runs when nothing is specified, including when a flag gets swallowed
+(see the Windows note above), so it should have zero preconditions.
+`Qwen3.6` needs a hand-started server holding 19GB of RAM; if it isn't
+running, every default invocation fails. Reach for `Qwen3.6` explicitly
+(`-m llamacpp/qwen3.6-35b`) when completeness matters more than turnaround.
 
 Tested on a task past trivial (an 8-function module with JSON persistence,
 validation, a real test suite, and a README), 2026-08-23: got the actual
@@ -182,11 +198,21 @@ code right. All 8 functions correct, 19 tests written that all pass under
 independent verification. But the README it wrote didn't do what the task
 asked (document each function's signature, behavior, and exceptions); it
 just asserted that documentation existed elsewhere without providing it,
-then reported the file set complete regardless. A different failure shape
-than `qwen3:8b`'s outright breakage above: the core deliverable was
+then reported the file set complete regardless. The core deliverable was
 correct, one secondary requirement was silently shorted. Worth remembering
 that "did the model complete the task" isn't a single yes/no; check every
 requirement, not just the main one.
+
+**`qwen3:8b`: fast, and not recommended despite it.** 5.2GB, ~8GB VRAM, no
+offload, 28-39s/task, and the highest BFCL multi-turn score of the Qwen3
+models checked. It was this project's default for exactly those reasons,
+and that was a mistake. It's 3/3 only on trivial single-file
+read-and-edit tasks. On the first moderately harder task it was given, it
+abandoned the actual file edit after three failed attempts, wrote a test
+file for an invented class that doesn't exist anywhere, syntax error
+included, and reported no problem. Nothing in the run signaled failure.
+Fine for trivial mechanical edits if speed matters; don't extrapolate past
+that.
 
 **`qwen3-coder:30b`.** Reliable (3/3) but not through this exact setup. It's
 an 18GB MoE model that splits ~35% CPU / 65% GPU on a 16GB card at OpenCode's
@@ -235,6 +261,18 @@ llama-server.exe -m <path-to-gguf> \
 
 `-np 1` matters here for the same reason `OLLAMA_NUM_PARALLEL=1` does above:
 it caps concurrent slots so the KV cache doesn't multiply.
+
+`--mlock` and `--no-mmap` are deprecated in recent llama.cpp builds in
+favor of `--load-mode mlock` / `--load-mode mmap`. They're still accepted
+as aliases and still apply, but they emit a deprecation warning at startup
+and will presumably stop working eventually.
+
+One thing to check before trusting a timing measurement: confirm nothing
+else is holding VRAM first (`nvidia-smi`, and `ollama ps` won't always tell
+you, an Ollama `llama-server.exe` can linger on the GPU after its model
+shows as unloaded). `--fit on` balances against whatever VRAM is actually
+free at startup, so a leftover process silently shifts more of the model
+onto the CPU and every number you measure afterward is wrong.
 
 Point `opencode.json`'s `baseURL` at `http://127.0.0.1:8033/v1` instead of
 Ollama's port to use it.

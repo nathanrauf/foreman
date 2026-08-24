@@ -30,10 +30,21 @@ python "$HOME/.claude/skills/foreman-recommend/scripts/recommend_model.py"
 
 Two tiers, both filtered to what actually fits the detected VRAM:
 
-- **Known candidates**, ranked by measured speed where available, and
-  otherwise by BFCL (Berkeley Function Calling Leaderboard) multi-turn
-  tool-calling accuracy, fetched live from `HuanzhiMao/BFCL-Result` on
-  GitHub. Real benchmark data, not a claim.
+- **Known candidates**, ranked by **how far each has actually been
+  verified**, then by measured speed, then by BFCL (Berkeley Function
+  Calling Leaderboard) multi-turn tool-calling accuracy, fetched live from
+  `HuanzhiMao/BFCL-Result` on GitHub. Real benchmark data, not a claim.
+
+  Reliability outranking speed is deliberate, and it's a correction. This
+  script originally sorted measured candidates by speed alone, which put a
+  model on top that was both the fastest tested (28-39s/task, best BFCL
+  score in its family) and the only one with a documented silent failure:
+  on a task past trivial it skipped a file edit, wrote tests for a class
+  that doesn't exist, and reported success. A model that produces broken
+  output quickly is worse than a slower one that works, because the cost
+  lands on the review cycle that has to catch it. Candidates now carry a
+  `validated_at` tier (`moderate`, `moderate-partial`, `trivial`, or
+  untested) plus a `documented_failure` flag, and both sort above speed.
 - **Discovered candidates**, pulled live from the Hugging Face model API
   (search sorted by both downloads and recency, merged), with exact quant
   file sizes confirmed through HF's tree API rather than estimated from

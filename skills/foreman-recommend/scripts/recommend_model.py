@@ -52,47 +52,71 @@ QUANT_PREFERENCE = ["Q4_K_M", "Q4_K_S", "IQ4_XS", "Q4_0", "Q5_K_M", "Q3_K_M"]
 # relevant here. Extend/adjust as the space shifts.
 DISCOVERY_SEARCH_TERMS = ["instruct GGUF", "coder GGUF", "agent GGUF"]
 
+# How far past trivial a model has actually been verified. Ranking treats this
+# as more important than speed, because a fast model that silently produces
+# broken output costs more than a slow one that works: catching it burns a
+# review cycle, and the failures this project hit were all silent (the model
+# reported success either way).
+#
+#   "moderate"         passed a real multi-function task (module + tests +
+#                      docs), every named requirement met, independently
+#                      verified.
+#   "moderate-partial" got the core deliverable right, but silently shorted a
+#                      named secondary requirement while reporting success.
+#   "trivial"          only ever verified on single-file read-and-edit tasks.
+#   None               not empirically tested here at all.
+VALIDATION_RANK = {"moderate": 3, "moderate-partial": 2, "trivial": 1, None: 0}
+
 # tag -> approx VRAM at Q4-class quantization (GB), BFCL result-dir name (or
-# None if not covered), acquisition backend, and notes carrying forward what's
-# already known. backend "ollama" means `ollama pull <tag>`; "llamacpp" means
-# a manual GGUF download run through llama.cpp's own server (needed for
-# models not published to Ollama's library, or that need --fit-style manual
-# CPU/GPU tuning Ollama doesn't expose).
+# None if not covered), acquisition backend, how far it's actually been
+# validated, whether it has a documented hard failure, and notes carrying
+# forward what's already known. backend "ollama" means `ollama pull <tag>`;
+# "llamacpp" means a manual GGUF download run through llama.cpp's own server
+# (needed for models not published to Ollama's library, or that need
+# --fit-style manual CPU/GPU tuning Ollama doesn't expose).
 KNOWN_CANDIDATES = {
     "qwen3:8b": {
         "approx_vram_gb": 8, "bfcl_path": "Qwen_Qwen3-8B-FC", "backend": "ollama",
         "measured_seconds_per_task": 33,
-        "notes": "Dense. Validated 2026-08-23: 3/3 clean tool-calling through OpenCode, 28-39s/task, fastest and most reliable candidate found so far.",
+        "validated_at": "trivial", "documented_failure": True,
+        "notes": "Dense. The fastest candidate found (28-39s/task, 3/3) but ONLY on trivial single-file read-and-edit tasks. On the first moderately harder task it was given it failed outright and silently: skipped the actual file edit after three failed attempts, wrote a test file for a class that doesn't exist anywhere, syntax error included, and reported no problem. Speed is not the reason to pick a model; this is why validation tier outranks it here.",
     },
     "qwen3:14b": {
         "approx_vram_gb": 10, "bfcl_path": "qwen3-14b-FC", "backend": "ollama",
+        "validated_at": None, "documented_failure": False,
         "notes": "Dense. Lower BFCL multi-turn score than qwen3:8b despite being larger; not yet empirically tested.",
     },
     "qwen3:32b": {
         "approx_vram_gb": 20, "bfcl_path": "Qwen_Qwen3-32B-FC", "backend": "ollama",
+        "validated_at": None, "documented_failure": False,
         "notes": "Dense. Highest BFCL score of the Qwen3 family checked, but needs CPU offload on a 16GB card. Not yet empirically tested; offload previously correlated with severe slowdowns under OpenCode.",
     },
     "qwen3-coder:30b": {
         "approx_vram_gb": 19, "bfcl_path": "qwen3-30b-a3b-instruct-2507-FC", "backend": "ollama",
         "measured_seconds_per_task": None,  # timed out (>180s) via OpenCode+Ollama; 190s via OpenCode+llama.cpp+--fit
-        "notes": "MoE ~3.3B active params. BFCL path is the closest available match (base instruct, not the coder fine-tune), approximate. Validated reliable (3/3) but needs CPU offload on 16GB; times out through OpenCode's heavy prompt over plain Ollama, but works via llama.cpp with --fit (see docs/opencode-setup.md).",
+        "validated_at": "trivial", "documented_failure": False,
+        "notes": "MoE ~3.3B active params. BFCL path is the closest available match (base instruct, not the coder fine-tune), approximate. Validated reliable (3/3) on trivial tasks but needs CPU offload on 16GB; times out through OpenCode's heavy prompt over plain Ollama, but works via llama.cpp with --fit (see docs/opencode-setup.md).",
     },
     "gpt-oss:20b": {
         "approx_vram_gb": 13, "bfcl_path": None, "backend": "ollama",
         "measured_seconds_per_task": 110,
-        "notes": "Not in BFCL's coverage. Empirically validated 3/3 through OpenCode (with AGENTS.md fix), fits fully in 16GB VRAM, ~110s/task.",
+        "validated_at": "moderate-partial", "documented_failure": False,
+        "notes": "Not in BFCL's coverage. 3/3 on trivial tasks through OpenCode (with AGENTS.md fix), fits fully in 16GB VRAM. On a real 8-function module task it got the code and tests right (19 tests, all passing, independently verified) but silently shorted the README requirement, asserting documentation existed rather than writing it, and reported completion anyway. Reliable for code, verify secondary deliverables.",
     },
     "Qwen3.6-35B-A3B-UD-Q4_K_M": {
         "approx_vram_gb": 15, "bfcl_path": None, "backend": "llamacpp",
         "measured_seconds_per_task": 49,
-        "notes": "MoE, hybrid attention/recurrent architecture (unsloth GGUF). Not on Ollama's library and not in BFCL (too new as of the Dec 2025 snapshot); found via a community post, not this shortlister, which is part of why HF-based discovery was added. Empirically validated 2026-08-23: 3/3 through OpenCode+llama.cpp (--fit on --fit-ctx 65536 --fit-target 256 -np 1 -fa on --no-mmap --mlock -b 2048 -ub 2048 -ctk/-ctv q8_0), 43-55s/task. Note --mlock holds ~19GB in physical RAM for as long as the server runs; must be stopped manually when done, unlike Ollama it does not auto-unload on idle.",
+        "validated_at": "moderate", "documented_failure": False,
+        "notes": "MoE, hybrid attention/recurrent architecture (unsloth GGUF). Not on Ollama's library and not in BFCL (too new as of the Dec 2025 snapshot); found via a community post, not this shortlister, which is part of why HF-based discovery was added. Validated at moderate complexity on two separate tasks: 3/3 through OpenCode+llama.cpp (--fit on --fit-ctx 65536 --fit-target 256 -np 1 -fa on --no-mmap --mlock -b 2048 -ub 2048 -ctk/-ctv q8_0), and on an 8-function module task it delivered all three requirements correctly (28 tests passing, plus a README that actually documented every function) where gpt-oss:20b silently shorted the docs. SPEED IS TASK-DEPENDENT: 43-55s/task on trivial tasks, but 412s on that module task. It's a 22GB model on a 16GB card, so ~7GB sits on the CPU and the offload penalty compounds as context grows (measured 32 t/s decaying to ~4 t/s within one run). Note --mlock holds ~19GB in physical RAM for as long as the server runs; must be stopped manually when done, unlike Ollama it does not auto-unload on idle. (--mlock/--no-mmap are deprecated in recent llama.cpp in favor of --load-mode, still accepted as aliases.)",
     },
     "qwen2.5-coder:14b": {
         "approx_vram_gb": 9, "bfcl_path": None, "backend": "ollama",
+        "validated_at": None, "documented_failure": True,
         "notes": "REJECTED: no documented tool-calling support (confirmed via its own Hugging Face model card), 0/2 empirical failures through OpenCode.",
     },
     "qwen2.5:14b-instruct": {
         "approx_vram_gb": 9, "bfcl_path": None, "backend": "ollama",
+        "validated_at": None, "documented_failure": True,
         "notes": "REJECTED: inconsistent through OpenCode (1 success, 1 hang with zero output on an identical run); raw API tool calls work fine, so the flakiness is specific to OpenCode's full prompt/schema load.",
     },
 }
@@ -205,12 +229,18 @@ def main():
             "bfcl_multi_turn_accuracy": score,
             "measured_seconds_per_task": info.get("measured_seconds_per_task"),
             "backend": info.get("backend", "ollama"),
+            "validated_at": info.get("validated_at"),
+            "documented_failure": info.get("documented_failure", False),
             "notes": info["notes"],
         })
 
     def sort_key(r):
+        # Reliability first, speed second. A model that silently produces
+        # broken output isn't made acceptable by producing it quickly.
         timed = r["measured_seconds_per_task"] is not None
         return (
+            -VALIDATION_RANK.get(r["validated_at"], 0),
+            r["documented_failure"],
             not timed,
             r["measured_seconds_per_task"] if timed else 0,
             not r["fits_without_offload"],
@@ -220,11 +250,21 @@ def main():
 
     print(f"Detected VRAM: {vram:.1f}GB  (budget after {args.headroom_gb:.1f}GB headroom: {budget:.1f}GB)\n")
     print("=== KNOWN (hand-curated, BFCL-scored and/or empirically tested) ===\n")
+    validation_label = {
+        "moderate": "verified on a real multi-function task",
+        "moderate-partial": "multi-function task, one requirement silently shorted",
+        "trivial": "TRIVIAL TASKS ONLY",
+        None: "not empirically tested",
+    }
     for r in known:
         score_str = f"{r['bfcl_multi_turn_accuracy'] * 100:.1f}%" if r["bfcl_multi_turn_accuracy"] is not None else "not in BFCL"
         fit_str = "fits, no offload" if r["fits_without_offload"] else "needs CPU offload"
         speed_str = f"{r['measured_seconds_per_task']}s/task (measured)" if r["measured_seconds_per_task"] is not None else "not yet measured"
+        verified_str = validation_label[r["validated_at"]]
+        if r["documented_failure"]:
+            verified_str += "  [HAS A DOCUMENTED FAILURE]"
         print(f"- {r['tag']}  [{r['backend']}]")
+        print(f"    Verified: {verified_str}")
         print(f"    Speed: {speed_str}   BFCL multi-turn: {score_str}   VRAM: ~{r['approx_vram_gb']}GB ({fit_str})")
         print(f"    {r['notes']}")
         print()
@@ -232,7 +272,10 @@ def main():
     if known:
         fitting_known = [r for r in known if r["fits_without_offload"] or r["measured_seconds_per_task"] is not None]
         if fitting_known:
-            print(f"Top known candidate: {fitting_known[0]['tag']}\n")
+            top = fitting_known[0]
+            print(f"Top known candidate: {top['tag']}")
+            print(f"  (ranked by how far it's actually been verified, then by speed;")
+            print(f"   a faster model with a worse verification record sorts below it)\n")
 
     if not args.no_discover:
         terms = args.search if args.search else DISCOVERY_SEARCH_TERMS
